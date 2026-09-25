@@ -16,6 +16,11 @@ android {
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()
         consumerProguardFiles("consumer-rules.pro")
+        // AGP defaults the AAR's minCompileSdk to compileSdk (37.1), which would force every
+        // consumer onto 37.1. The API needs nothing above minSdk; dependencies declare their own.
+        aarMetadata {
+            minCompileSdk = libs.versions.android.minSdk.get().toInt()
+        }
     }
 
     compileOptions {

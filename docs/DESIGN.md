@@ -46,7 +46,7 @@ The four libraries are published as `com.spacecorps.oam:<module>:<version>`, wit
 - run `./gradlew publishToMavenLocal` and add `mavenLocal()`, or
 - add `includeBuild("path/to/open-android-models")` to the consumer's `settings.gradle.kts`. Gradle then substitutes the projects for the same coordinates.
 
-Consumers need Kotlin 2.3 or newer, because the classes carry Kotlin 2.4 metadata. AGP 9's built-in Kotlin defaults to KGP 2.2, so add the plugin to the build classpath: `id("org.jetbrains.kotlin.jvm") version "2.4.20" apply false`. JVM consumers also need Java 21. An Android build that includes this one must use the same AGP version (9.4.1), since AGP refuses two versions in one build.
+Consumers need Kotlin 2.3 or newer, because the classes carry Kotlin 2.4 metadata. AGP 9's built-in Kotlin defaults to KGP 2.2, so add the plugin to the build classpath: `id("org.jetbrains.kotlin.jvm") version "2.4.20" apply false`. JVM consumers also need Java 21. An Android build that includes this one must use the same AGP version (9.4.1), since AGP refuses two versions in one build. Android consumers do not need this repository's compileSdk (37.1): `oam-mlkit` declares its minSdk as the AAR's minimum compileSdk, and ML Kit's AndroidX dependencies ask for 33.
 
 ## Core contracts
 
