@@ -462,6 +462,20 @@ class GeminiNanoModelTest {
     }
 
     @Test
+    fun aDownloadFlowThatThrowsIsMapped() = runTest {
+        val client = FakeNanoClient(status = FeatureStatus.DOWNLOADABLE)
+        client.downloadEvents = flow {
+            emit(DownloadStatus.DownloadStarted(10))
+            throw IllegalStateException("AICore went away")
+        }
+        val nano = model(client)
+        val error = assertFailsWith<AgentError> { nano.download().toList() }
+        assertEquals(AgentErrorCode.MODEL_UNAVAILABLE, error.code)
+        assertTrue(error.message.contains("AICore went away"))
+        assertNull(nano.downloadProgress.value)
+    }
+
+    @Test
     fun downloadingAvailabilityWithoutProgress() = runTest {
         val nano = model(FakeNanoClient(status = FeatureStatus.DOWNLOADING))
         assertEquals(ModelAvailability.Downloading(null, null), nano.availability())

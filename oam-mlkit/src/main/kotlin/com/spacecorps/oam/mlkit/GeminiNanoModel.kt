@@ -191,7 +191,10 @@ public class GeminiNanoModel internal constructor(
         }
         var total: Long? = null
         try {
-            client.download().collect { event ->
+            client.download().catch { error ->
+                // Upstream (ML Kit) failures only.
+                throw if (GeminiNanoErrors.isPlainCancellation(error)) error else unavailable(error)
+            }.collect { event ->
                 when (event) {
                     is DownloadStatus.DownloadStarted -> {
                         total = event.bytesToDownload.takeIf { it > 0 }
