@@ -487,7 +487,7 @@ Every failure is an `AgentError` with an `AgentErrorCode`, the same twelve codes
 ./gradlew :oam-mlkit:testDebugUnitTest :sample:testDebugUnitTest
 ```
 
-`./gradlew build` runs 408 JVM tests: oam-core 130, oam-game 112, oam-bridge 92, oam-mlkit 71 and sample 3 (the Android modules' debug unit tests). Nine of them are the opt-in live checks below, skipped by default. Six are `ReadmeExamplesTest`, which runs this README's examples and checks them against the README. `oam-mlkit` is tested through a fake of its internal ML Kit client, so its tests run without a device. The GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `./gradlew build` and `publishToMavenLocal` on Ubuntu with JDK 21, on pushes and pull requests to `main`; the opt-in checks skip there.
+At commit `92325c6`, `./gradlew build` runs 408 JVM tests: oam-core 130, oam-game 112, oam-bridge 92, oam-mlkit 71 and sample 3 (the Android modules' debug unit tests). Nine of them are the opt-in live checks below, skipped by default. Six are `ReadmeExamplesTest`, which runs this README's examples and checks them against the README. `oam-mlkit` is tested through a fake of its internal ML Kit client, so its tests run without a device. The GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `./gradlew build` and `publishToMavenLocal` on Ubuntu with JDK 21, on pushes and pull requests to `main`; the opt-in checks skip there.
 
 For your own tests, `ScriptedLanguageModel` plays a script, one entry per model request:
 
