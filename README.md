@@ -20,6 +20,7 @@ It is the Android sibling of [open-apple-models](https://github.com/SpaceCorps/o
 
 - [What it does](#what-it-does)
 - [Requirements and supported devices](#requirements-and-supported-devices)
+- [Try it](#try-it)
 - [How tool calling works without native support](#how-tool-calling-works-without-native-support)
 - [Modules](#modules)
 - [Install](#install)
@@ -49,8 +50,8 @@ Gemini Nano runs only on AICore devices. As of September 2026, ML Kit's device l
 | Model version | Devices |
 |---|---|
 | nano-v4 (Gemma 4 based, Fast E2B and Full E4B variants) | Pixel 11 series, Galaxy Z Flip8, Galaxy Z Fold8 and Z Fold8 Ultra |
-| nano-v3 (Gemma 3n based) | Pixel 9 and Pixel 10 series, Galaxy S26 series, some OPPO, vivo, OnePlus, Honor, Sony and Sharp models |
-| nano-v2 | some Xiaomi, POCO, OnePlus and Motorola models, and the Galaxy Z Fold7 |
+| nano-v3 (Gemma 3n based) | Pixel 9 and Pixel 10 series, Galaxy S26 series, and some models from OPPO, vivo, OnePlus, Honor, iQOO, realme, Motorola, Lenovo, Sony and Sharp |
+| nano-v2 | Galaxy Z Fold7 and Z TriFold, and some models from Xiaomi, POCO, OnePlus, OPPO, vivo, Honor, iQOO, realme and Motorola |
 
 The list changes. Check [ML Kit GenAI](https://developers.google.com/ml-kit/genai) for the current one.
 
@@ -64,6 +65,19 @@ The list changes. Check [ML Kit GenAI](https://developers.google.com/ml-kit/gena
 - **ML Kit dependency:** `com.google.mlkit:genai-prompt:1.0.0-beta4`, the newest release at the time of writing. It is a beta.
 
 For what your build needs (Kotlin, compileSdk, JDK, AGP), see [Install](#install).
+
+## Try it
+
+With JDK 21 and the Android SDK (`android-37.1` platform, `ANDROID_HOME` set; see [Contributing](#contributing)):
+
+```sh
+git clone https://github.com/SpaceCorps/open-android-models
+cd open-android-models
+./gradlew :sample:testDebugUnitTest   # plays Mira's scripted evening through the real agent and tools; no device needed
+./gradlew :sample:installDebug        # installs the sample app on a phone or emulator connected over adb
+```
+
+In the app, choose **Scripted** unless the phone runs Gemini Nano (see [The sample app](#the-sample-app)). The APK builds, but it has not yet been installed on a phone or an emulator.
 
 ## How tool calling works without native support
 
@@ -191,7 +205,7 @@ Both ways were checked with a throwaway consumer (Gradle 9.7.1, AGP 9.4.1, Kotli
 
 ## Quick start
 
-**No device?** Everything except Gemini Nano itself runs on the desktop. With JDK 21 and the Android SDK set up (see [Contributing](#contributing)), `./gradlew :sample:testDebugUnitTest` plays Mira's scripted evening through the real agent and tools, and `ScriptedLanguageModel` ([Testing](#testing)) lets you script any of the examples below.
+**No device?** Everything except Gemini Nano itself runs on the desktop: see [Try it](#try-it), and `ScriptedLanguageModel` ([Testing](#testing)) lets you script any of the examples below.
 
 In the examples, `model` is any `LanguageModel`: `GeminiNanoModel()` on a device, a `ScriptedLanguageModel` in tests, or `OpenAICompatibleModel("http://127.0.0.1:19997/v1", model = "system")` against `oam serve` on a Mac.
 
@@ -436,6 +450,10 @@ Host checklist:
 To change the model or limits, replace the factory before the first `create`, for example in `Application.onCreate`:
 
 ```kotlin
+import com.spacecorps.oam.bridge.*
+import com.spacecorps.oam.jni.*
+import com.spacecorps.oam.mlkit.*
+
 OamJni.engineFactory = BridgeEngineFactory(
     systemModel = { GeminiNanoModel(GeminiNanoOptions(preference = GeminiNanoOptions.Preference.FAST)) },
     configure = { model -> BridgeConfiguration(systemModel = model, maxSessions = 16) },
@@ -445,6 +463,9 @@ OamJni.engineFactory = BridgeEngineFactory(
 Kotlin hosts can skip JNI and run the engine in process:
 
 ```kotlin
+import com.spacecorps.oam.bridge.*
+import com.spacecorps.oam.mlkit.*
+
 val engine = BridgeEngine(BridgeConfiguration(systemModel = GeminiNanoModel())) { line -> println(line) }
 engine.receive("""{"jsonrpc":"2.0","id":1,"method":"initialize"}""")
 ```
