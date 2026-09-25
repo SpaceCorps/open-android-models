@@ -5,9 +5,15 @@ import com.spacecorps.oam.ToolChoice
 import com.spacecorps.oam.ToolExecution
 import com.spacecorps.oam.bridge.BridgeCoding.obj
 import com.spacecorps.oam.game.ContentGenerator
+import com.spacecorps.oam.game.Decision
 import com.spacecorps.oam.game.DecisionEngine
 import com.spacecorps.oam.game.DecisionRequest
 import com.spacecorps.oam.game.Persona
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -33,15 +39,18 @@ internal object DecisionMethods {
 
     private val ENGINE_KEYS = setOf("model", "instructions", "temperature", "maxToolRounds", "toolTimeoutSeconds")
 
-    /** `model`, `instructions`, `temperature`, `maxToolRounds` and `toolTimeoutSeconds`, shared by `decide` and `decideMany`. */
-    private class EngineSettings(params: BridgeParams, bridge: BridgeEngine) {
-        val engine = DecisionEngine(
-            model = bridge.makeModel(BridgeCoding.modelSpec(params["model"])),
-            instructions = params.optionalString("instructions"),
-            temperature = params.optionalDouble("temperature", minimum = 0.0),
-            maxToolRounds = params.optionalInt("maxToolRounds", minimum = 0) ?: 2,
-        )
+    /**
+     * `model`, `instructions`, `temperature`, `maxToolRounds` and `toolTimeoutSeconds`, shared by `decide` and
+     * `decideMany`. The model is resolved last ([engine]), so parameter mistakes are reported first.
+     */
+    private class EngineSettings(params: BridgeParams, private val bridge: BridgeEngine) {
+        private val spec = BridgeCoding.modelSpec(params["model"])
+        private val instructions = params.optionalString("instructions")
+        private val temperature = params.optionalDouble("temperature", minimum = 0.0)
+        private val maxToolRounds = params.optionalInt("maxToolRounds", minimum = 0) ?: 2
         val toolTimeout: Duration? = toolTimeout(params, bridge)
+
+        fun engine(): DecisionEngine = DecisionEngine(bridge.makeModel(spec), instructions, temperature, maxToolRounds)
     }
 
     private fun toolTimeout(params: BridgeParams, bridge: BridgeEngine): Duration? {
@@ -59,7 +68,7 @@ internal object DecisionMethods {
         val warnings = params.unknownKeys(DECISION_KEYS + ENGINE_KEYS).toMutableList()
         val (decision, decisionWarnings) = decisionRequest(params, request, game, settings.toolTimeout, emptyMap())
         warnings += decisionWarnings
-        val engine = settings.engine
+        val engine = settings.engine()
         return BridgeReply.Deferred {
             val result = LinkedHashMap(GameCoding.json(engine.decide(decision)))
             if (warnings.isNotEmpty()) result["warnings"] = BridgeCoding.strings(warnings)
@@ -94,9 +103,9 @@ internal object DecisionMethods {
             warnings += decisionWarnings.map { "$path: $it" }
             decision
         }
-        val engine = settings.engine
+        val engine = settings.engine()
         return BridgeReply.Deferred {
-            val results = engine.decideMany(requests, maxConcurrency).map { result ->
+            val results = decideInOrder(engine, requests, maxConcurrency).map { result ->
                 result.fold(
                     onSuccess = { GameCoding.json(it) },
                     onFailure = { obj("error" to BridgeError.normalizing(it).toJson()) },
@@ -107,6 +116,30 @@ internal object DecisionMethods {
             JsonObject(members)
         }
     }
+
+    /**
+     * Runs the decisions with at most [maxConcurrency] at once, starting them in request order (a
+     * permit is taken before each one is launched), so a script or a rate-limited model sees them
+     * in the order the client sent them. Failures are isolated per decision.
+     */
+    private suspend fun decideInOrder(engine: DecisionEngine, requests: List<DecisionRequest>, maxConcurrency: Int): List<Result<Decision>> =
+        coroutineScope {
+            val permits = Semaphore(maxConcurrency)
+            requests.map { request ->
+                permits.acquire()
+                async {
+                    try {
+                        Result.success(engine.decide(request))
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Result.failure(error)
+                    } finally {
+                        permits.release()
+                    }
+                }
+            }.awaitAll()
+        }
 
     // MARK: Parsing
 
@@ -184,8 +217,8 @@ internal object DecisionMethods {
         val schema = BridgeCoding.schema(params.value("schema"))
         warnings += BridgeCoding.checkSchema(schema, "schema")
         val instructions = params.optionalString("instructions")
-        val model = request.engine.makeModel(BridgeCoding.modelSpec(params["model"]))
-        val generator = ContentGenerator(model = model, temperature = params.optionalDouble("temperature", minimum = 0.0))
+        val spec = BridgeCoding.modelSpec(params["model"])
+        val temperature = params.optionalDouble("temperature", minimum = 0.0)
         var tools: List<AgentTool> = emptyList()
         params["tools"]?.let { value ->
             val parsed = ForwardedTools.tools(value, "tools", request, emptyMap(), toolTimeout(params, request.engine))
@@ -193,6 +226,7 @@ internal object DecisionMethods {
             warnings += parsed.warnings
         }
         val context = params["context"]
+        val generator = ContentGenerator(model = request.engine.makeModel(spec), temperature = temperature)
         return BridgeReply.Deferred {
             val content = generator.generate(prompt, schema, instructions, context, tools)
             val members = linkedMapOf("content" to content)

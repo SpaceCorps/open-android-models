@@ -27,7 +27,7 @@ class SessionTest {
     private val openGate = BridgeHarness.OPEN_GATE
 
     @Test
-    fun lifecycle() = runBlocking {
+    fun lifecycle() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val created = harness.result(
             "session/create",
@@ -59,7 +59,7 @@ class SessionTest {
     }
 
     @Test
-    fun manyToolsAreWarnedAbout() = runBlocking {
+    fun manyToolsAreWarnedAbout() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val tools = (1..6).joinToString(", ", "[", "]") { """{"name": "tool_$it", "description": "Does thing $it."}""" }
         val created = harness.result("session/create", """{"model": "scripted", "tools": $tools}""")
@@ -72,7 +72,7 @@ class SessionTest {
     }
 
     @Test
-    fun sessionLimit() = runBlocking {
+    fun sessionLimit() = runBlocking<Unit> {
         val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, maxSessions = 1))
         harness.createSession()
         val second = harness.call("session/create", """{"model": "scripted"}""")
@@ -82,7 +82,7 @@ class SessionTest {
     }
 
     @Test
-    fun createWarnsAboutUnknownKeysAndAnUnavailableModel() = runBlocking {
+    fun createWarnsAboutUnknownKeysAndAnUnavailableModel() = runBlocking<Unit> {
         val harness = BridgeHarness(
             BridgeConfiguration(
                 systemModel = ScriptedLanguageModel(),
@@ -96,7 +96,7 @@ class SessionTest {
     }
 
     @Test
-    fun respondWithoutStreaming() = runBlocking {
+    fun respondWithoutStreaming() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"text": "Welcome to the forge."}]""")
         val request = harness.send("session/respond", """{"session": "$id", "prompt": "Hi"}""")
@@ -114,7 +114,7 @@ class SessionTest {
     }
 
     @Test
-    fun streamingEventsPrecedeTheResult() = runBlocking {
+    fun streamingEventsPrecedeTheResult() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"text": "Steel is forged in fire and patience.", "chunks": 5}]""")
         val request = harness.send("session/respond", """{"session": "$id", "prompt": "Wisdom?", "stream": true}""")
@@ -133,7 +133,7 @@ class SessionTest {
     }
 
     @Test
-    fun structuredOutput() = runBlocking {
+    fun structuredOutput() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"json": {"choice": "haggle", "reasoning": "Too cheap."}}]""")
         val schema = """{"type": "object", "properties": {"reasoning": {"type": "string"}, "choice": {"type": "string", "enum": ["sell", "refuse", "haggle"]}}, "required": ["reasoning", "choice"]}"""
@@ -149,7 +149,7 @@ class SessionTest {
     }
 
     @Test
-    fun clientToolRoundTrip() = runBlocking {
+    fun clientToolRoundTrip() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(
             steps = """[{"toolCalls": [{"name": "open_gate", "arguments": {"gate": "north"}}]}, {"template": "Gate result: {toolOutput}"}]""",
@@ -194,7 +194,7 @@ class SessionTest {
     }
 
     @Test
-    fun toolErrorReplies() = runBlocking {
+    fun toolErrorReplies() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { call, _ ->
             if (call["arguments"]["gate"].str == "north") {
@@ -221,7 +221,7 @@ class SessionTest {
     }
 
     @Test
-    fun textAndLenientToolOutputs() = runBlocking {
+    fun textAndLenientToolOutputs() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { call, _ ->
             if (call["arguments"]["gate"].str == "east") j("""{"output": "Opened."}""") else j("""{"opened": false}""")
@@ -237,7 +237,7 @@ class SessionTest {
     }
 
     @Test
-    fun toolTimeoutSendsToolCancel() = runBlocking {
+    fun toolTimeoutSendsToolCancel() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val gate = openGate.dropLast(1) + """, "timeoutSeconds": 0.2}"""
         val id = harness.createSession(
@@ -263,7 +263,7 @@ class SessionTest {
     }
 
     @Test
-    fun slowTurnsDoNotBlockOtherRequests() = runBlocking {
+    fun slowTurnsDoNotBlockOtherRequests() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val a = harness.createSession(steps = """[{"text": "A done", "delayMs": 600}]""")
         val b = harness.createSession(steps = """[{"text": "B done", "delayMs": 600}]""")
@@ -281,7 +281,7 @@ class SessionTest {
     }
 
     @Test
-    fun concurrentSessionsWithClientToolsKeepPerRequestOrder() = runBlocking {
+    fun concurrentSessionsWithClientToolsKeepPerRequestOrder() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { _, params -> j("""{"output": "ok ${params["session"].str}"}""") }
         val sessions = (0 until 8).map { index ->
@@ -306,7 +306,7 @@ class SessionTest {
     }
 
     @Test
-    fun pipelinedRequestsKeepTheirOrder() = runBlocking {
+    fun pipelinedRequestsKeepTheirOrder() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val model = """{"type": "scripted", "steps": [{"template": "A:{prompt}", "delayMs": 50}, {"template": "B:{prompt}"}]}"""
         // Nothing awaited between these sends.
@@ -322,7 +322,7 @@ class SessionTest {
     }
 
     @Test
-    fun cancelRunningAndQueuedTurns() = runBlocking {
+    fun cancelRunningAndQueuedTurns() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"text": "slow", "delayMs": 5000}, {"text": "slower", "delayMs": 5000}]""")
         val first = harness.send("session/respond", """{"session": "$id", "prompt": "one"}""")
@@ -340,7 +340,7 @@ class SessionTest {
     }
 
     @Test
-    fun cancelWhileWaitingForAClientTool() = runBlocking {
+    fun cancelWhileWaitingForAClientTool() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"toolCalls": [{"name": "open_gate", "arguments": {"gate": "x"}}]}]""", tools = "[$openGate]")
         val request = harness.send("session/respond", """{"session": "$id", "prompt": "Open"}""")
@@ -353,7 +353,7 @@ class SessionTest {
     }
 
     @Test
-    fun modelErrorsMapToApplicationCodes() = runBlocking {
+    fun modelErrorsMapToApplicationCodes() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"error": "guardrail_violation", "message": "Unsafe content."}, {"error": "context_size_exceeded"}, {"text": "Recovered."}]""")
         val guardrail = harness.call("session/respond", """{"session": "$id", "prompt": "x"}""")
@@ -369,7 +369,7 @@ class SessionTest {
     }
 
     @Test
-    fun rateLimitsCarryTheRetryDelay() = runBlocking {
+    fun rateLimitsCarryTheRetryDelay() = runBlocking<Unit> {
         val model = ScriptedLanguageModel(
             listOf(
                 ScriptedLanguageModel.Step.Fail(
@@ -388,7 +388,7 @@ class SessionTest {
     }
 
     @Test
-    fun transcriptExportAndRestore() = runBlocking {
+    fun transcriptExportAndRestore() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val original = harness.createSession(steps = """[{"text": "Name's Gorm."}]""", instructions = "You are Gorm.")
         harness.result("session/respond", """{"session": "$original", "prompt": "Who are you?"}""")
@@ -419,7 +419,7 @@ class SessionTest {
     }
 
     @Test
-    fun historyAloneRestoresInstructionsAndTools() = runBlocking {
+    fun historyAloneRestoresInstructionsAndTools() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { call, _ -> j("""{"output": "opened ${call["arguments"]["gate"].str}"}""") }
         val original = harness.createSession(steps = """[{"text": "Aye."}]""", tools = "[$openGate]", instructions = "You are a guard.")
@@ -458,7 +458,7 @@ class SessionTest {
     }
 
     @Test
-    fun mutatingSessionSettings() = runBlocking {
+    fun mutatingSessionSettings() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { call, _ -> j("""{"output": "waved at ${call["arguments"]["target"].str}"}""") }
         val id = harness.createSession(
@@ -491,7 +491,7 @@ class SessionTest {
     }
 
     @Test
-    fun perTurnPolicyOverrides() = runBlocking {
+    fun perTurnPolicyOverrides() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"text": "no tools today"}]""", tools = "[$openGate]", options = """{"toolChoice": "required", "maxToolRounds": 2}""")
         val reply = harness.result("session/respond", """{"session": "$id", "prompt": "hi", "toolChoice": "none"}""")
@@ -501,7 +501,7 @@ class SessionTest {
     }
 
     @Test
-    fun toolChoiceSeesToolsFromAPipelinedSetTools() = runBlocking {
+    fun toolChoiceSeesToolsFromAPipelinedSetTools() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { _, _ -> j("""{"output": "waved"}""") }
         val session = harness.createSession(steps = """[{"toolCalls": [{"name": "wave"}]}, {"template": "{toolOutput}"}]""")
@@ -519,7 +519,7 @@ class SessionTest {
     }
 
     @Test
-    fun requestIdTagsKeepLargeNumericIdsExact() = runBlocking {
+    fun requestIdTagsKeepLargeNumericIdsExact() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.box.responder = MessageBox.ToolResponder { _, _ -> j("""{"output": "opened"}""") }
         val session = harness.createSession(
@@ -538,7 +538,7 @@ class SessionTest {
     // MARK: Compaction
 
     @Test
-    fun compactHistory() = runBlocking {
+    fun compactHistory() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = sessionReadyToCompact(harness, delayMs = 0)
         val compacted = harness.result("session/compact", """{"session": "$id", "keepRecentTurns": 1}""")
@@ -550,7 +550,7 @@ class SessionTest {
     }
 
     @Test
-    fun cancelledCompactionLeavesTheHistoryAlone() = runBlocking {
+    fun cancelledCompactionLeavesTheHistoryAlone() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = sessionReadyToCompact(harness, delayMs = 400)
         val compact = harness.send("session/compact", """{"session": "$id", "keepRecentTurns": 1}""")
@@ -566,7 +566,7 @@ class SessionTest {
     }
 
     @Test
-    fun deletingASessionCancelsItsCompaction() = runBlocking {
+    fun deletingASessionCancelsItsCompaction() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = sessionReadyToCompact(harness, delayMs = 400)
         val compact = harness.send("session/compact", """{"session": "$id", "keepRecentTurns": 1}""")
@@ -587,7 +587,7 @@ class SessionTest {
     // MARK: Android additions
 
     @Test
-    fun samplingAndLabelsReachTheModel() = runBlocking {
+    fun samplingAndLabelsReachTheModel() = runBlocking<Unit> {
         val model = ScriptedLanguageModel(listOf(ScriptedLanguageModel.Step.Text("Aye.")), style = ScriptedLanguageModel.ScriptStyle.NATIVE)
         val harness = BridgeHarness(BridgeConfiguration(systemModel = model, modelAvailability = { BridgeHarness.TEST_AVAILABILITY }))
         val created = harness.result(
@@ -607,7 +607,7 @@ class SessionTest {
     }
 
     @Test
-    fun concurrentTurnsOnOneSessionAreSerialized() = runBlocking {
+    fun concurrentTurnsOnOneSessionAreSerialized() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = (1..5).joinToString(", ", "[", "]") { """{"template": "$it:{prompt}", "delayMs": ${(5 - it) * 10}}""" })
         val requests = (1..5).map { harness.send("session/respond", """{"session": "$id", "prompt": "p$it"}""") }

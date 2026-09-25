@@ -26,7 +26,7 @@ import kotlin.time.TimeSource
 @Timeout(60)
 class ProtocolTest {
     @Test
-    fun initializeReportsProtocolAndCapabilities() = runBlocking {
+    fun initializeReportsProtocolAndCapabilities() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val result = harness.result("initialize", """{"client": {"name": "unit-test", "version": "1"}, "protocolVersion": "1.0"}""")
         assertEquals("1.0", result["protocolVersion"].str)
@@ -51,14 +51,14 @@ class ProtocolTest {
     }
 
     @Test
-    fun initializeRejectsAnIncompatibleProtocolVersion() = runBlocking {
+    fun initializeRejectsAnIncompatibleProtocolVersion() = runBlocking<Unit> {
         val harness = BridgeHarness()
         assertEquals(-32602, harness.call("initialize", """{"protocolVersion": "2.0"}""").errorCode)
         assertNotNull(harness.result("initialize", """{"protocolVersion": "1.3"}""")["protocolVersion"])
     }
 
     @Test
-    fun pingAndAvailability() = runBlocking {
+    fun pingAndAvailability() = runBlocking<Unit> {
         val harness = BridgeHarness(
             BridgeConfiguration(
                 modelAvailability = {
@@ -74,7 +74,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun theSystemModelsAvailabilityIsReported() = runBlocking {
+    fun theSystemModelsAvailabilityIsReported() = runBlocking<Unit> {
         val nano = ScriptedLanguageModel(
             capabilities = ModelCapabilities(maxInputTokens = 3800, maxOutputTokens = 256, modelName = "nano-v4"),
             availability = com.spacecorps.oam.ModelAvailability.Downloading(bytesDownloaded = 10, totalBytes = 100),
@@ -99,7 +99,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun parseErrorsHaveANullId() = runBlocking {
+    fun parseErrorsHaveANullId() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.engine.receive("""{"jsonrpc": "2.0", "id": 1, "method": """)
         harness.engine.receive("""{"jsonrpc": "2.0", "id": 2, "method": "ping", "params": {"x": bare}}""")
@@ -114,7 +114,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun invalidMessagesAreRejected() = runBlocking {
+    fun invalidMessagesAreRejected() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val cases = listOf(
             """{"id": 1, "method": "ping"}""" to j("1"), // missing jsonrpc
@@ -133,7 +133,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun blankLinesAreIgnored() = runBlocking {
+    fun blankLinesAreIgnored() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.engine.receive("")
         harness.engine.receive("   \t")
@@ -142,7 +142,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun unknownMethod() = runBlocking {
+    fun unknownMethod() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val response = harness.call("npc/dance", """{"style": "jig"}""")
         assertEquals(-32601, response.errorCode)
@@ -151,7 +151,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun numericIdsAreEchoedExactly() = runBlocking {
+    fun numericIdsAreEchoedExactly() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val ids = listOf("7", "1000000000000000", "9007199254740991", "-9007199254740991", "4503599627370497")
         for (id in ids) harness.engine.receive("""{"jsonrpc":"2.0","id":$id,"method":"ping"}""")
@@ -163,7 +163,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun numericIdsThatCannotRoundTripAreRejected() = runBlocking {
+    fun numericIdsThatCannotRoundTripAreRejected() = runBlocking<Unit> {
         val harness = BridgeHarness()
         // 2^53 + 1 would come back as 2^53; 1e999 is infinite.
         for (id in listOf("9007199254740993", "9007199254740992", "1e999", "-1e300")) {
@@ -177,7 +177,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun notificationsGetNoResponse() = runBlocking {
+    fun notificationsGetNoResponse() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.notify("ping")
         harness.notify("does/not/exist")
@@ -189,7 +189,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun invalidParams() = runBlocking {
+    fun invalidParams() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession()
         val missingPrompt = harness.call("session/respond", """{"session": "$id"}""")
@@ -217,7 +217,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun outOfRangeTimeoutsAreRejectedNotTrapped() = runBlocking {
+    fun outOfRangeTimeoutsAreRejectedNotTrapped() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val cases = listOf(
             "session/create" to """{"options": {"toolTimeoutSeconds": 1e19}}""",
@@ -247,7 +247,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun schemaValidation() = runBlocking {
+    fun schemaValidation() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val result = harness.result(
             "schema/validate",
@@ -265,7 +265,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun toolValidation() = runBlocking {
+    fun toolValidation() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val result = harness.result(
             "tools/validate",
@@ -286,7 +286,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun outgoingMessagesAreSingleLineJsonRpc() = runBlocking {
+    fun outgoingMessagesAreSingleLineJsonRpc() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = """[{"text": "Line one\nLine two", "chunks": 2}]""")
         harness.result("session/respond", """{"session": "$id", "prompt": "Say two lines", "stream": true}""")
@@ -298,7 +298,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun responsesToUnknownRequestsAreIgnored() = runBlocking {
+    fun responsesToUnknownRequestsAreIgnored() = runBlocking<Unit> {
         val logs = LogCollector()
         val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, logger = logs.logger))
         harness.engine.receive("""{"jsonrpc":"2.0","id":"t-99","result":{"output":"stray"}}""")
@@ -308,7 +308,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun inProcessCalls() = runBlocking {
+    fun inProcessCalls() = runBlocking<Unit> {
         val harness = BridgeHarness()
         assertEquals(EmptyJsonObject, harness.engine.call("ping"))
         val error = assertFailsWith<BridgeError> { harness.engine.call("nope/nope") }
@@ -328,14 +328,14 @@ class ProtocolTest {
     }
 
     @Test
-    fun scriptedModelsCanBeDisabled() = runBlocking {
+    fun scriptedModelsCanBeDisabled() = runBlocking<Unit> {
         val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, allowsScriptedModels = false))
         assertEquals(-32602, harness.call("session/create", """{"model": {"type": "scripted", "steps": []}}""").errorCode)
         assertEquals(listOf("system"), harness.result("initialize")["capabilities"]["models"].strings())
     }
 
     @Test
-    fun customModelTypesGoThroughTheFactory() = runBlocking {
+    fun customModelTypesGoThroughTheFactory() = runBlocking<Unit> {
         val specs = java.util.Collections.synchronizedList(ArrayList<BridgeModelSpec>())
         val harness = BridgeHarness(
             BridgeConfiguration(
@@ -358,7 +358,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun shutdownCancelsWorkAndRejectsLaterRequests() = runBlocking {
+    fun shutdownCancelsWorkAndRejectsLaterRequests() = runBlocking<Unit> {
         val fired = AtomicBoolean(false)
         val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, onShutdown = { fired.set(true) }))
         val id = harness.createSession(steps = """[{"text": "late", "delayMs": 5000}]""")
@@ -379,7 +379,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun shutdownWaitIsBoundedEvenForUncancellableWork() = runBlocking {
+    fun shutdownWaitIsBoundedEvenForUncancellableWork() = runBlocking<Unit> {
         val stuck = object : BridgeExtension {
             override fun register(registry: BridgeMethodRegistry, engine: BridgeEngine) {}
 
@@ -403,7 +403,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun closeStopsDelivery() = runBlocking {
+    fun closeStopsDelivery() = runBlocking<Unit> {
         val harness = BridgeHarness()
         harness.result("ping")
         harness.engine.close()
@@ -417,7 +417,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun closeFromInsideTheSendCallbackDoesNotDeadlock() = runBlocking {
+    fun closeFromInsideTheSendCallbackDoesNotDeadlock() = runBlocking<Unit> {
         lateinit var engine: BridgeEngine
         val delivered = java.util.Collections.synchronizedList(ArrayList<String>())
         engine = BridgeEngine(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY })) { line ->
