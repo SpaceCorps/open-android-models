@@ -71,6 +71,30 @@ public object LenientJson {
             }
         }
 
+        /**
+         * Skips `| "b" | "c"` after a value: small models sometimes copy a
+         * union from the prompt instead of choosing. The first value wins.
+         */
+        fun skipAlternatives() {
+            while (true) {
+                val save = index
+                skipWhitespace()
+                if (index >= text.length || text[index] != '|') {
+                    index = save
+                    return
+                }
+                index++
+                skipWhitespace()
+                if (atEnd) return
+                try {
+                    parseValue()
+                } catch (_: JsonParseException) {
+                    index = save
+                    return
+                }
+            }
+        }
+
         /** Returns null only in partial mode, when the input ends before a value. */
         fun parseValue(): JsonElement? {
             skipWhitespace()
@@ -115,6 +139,7 @@ public object LenientJson {
                 index++
                 val value = parseValue() ?: return JsonObject(members)
                 members[key] = value
+                skipAlternatives()
                 skipWhitespace()
                 if (atEnd) {
                     if (partial) return JsonObject(members)
@@ -163,6 +188,7 @@ public object LenientJson {
                 }
                 val value = parseValue() ?: return JsonArray(items)
                 items += value
+                skipAlternatives()
                 skipWhitespace()
                 if (atEnd) {
                     if (partial) return JsonArray(items)

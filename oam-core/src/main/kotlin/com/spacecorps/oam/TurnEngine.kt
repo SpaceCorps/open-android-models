@@ -59,6 +59,7 @@ internal class TurnEngine(
         capabilities = model.capabilities,
         context = config.context,
         countTokens = { text -> model.countTokens(text) },
+        structuredReply = config.structuredReplyRenderer,
     )
     private val uses = ArrayList<TranscriptEntry.ToolUse>()
     private val entries = ArrayList<TranscriptEntry>()
@@ -136,7 +137,8 @@ internal class TurnEngine(
                 is StepEnvelope.Result.Call -> {
                     val tool = tools.first { it.name == parsed.tool }
                     when (val checked = checkArguments(tool, parsed.candidates)) {
-                        is Checked.Valid -> return Decision.Call(tool, checked.arguments)
+                        // Small models tend to repeat a call whose result they already have; that means they are done.
+                        is Checked.Valid -> return if (alreadyCalled(tool, checked.arguments)) Decision.Respond else Decision.Call(tool, checked.arguments)
                         is Checked.Invalid -> {
                             val problem = "the arguments for ${tool.name} are invalid: ${checked.problem}"
                             repair = Repair(problem, output)
@@ -278,6 +280,9 @@ internal class TurnEngine(
 
         class Invalid(val problem: String, val arguments: JsonObject) : Checked
     }
+
+    private fun alreadyCalled(tool: AgentTool, arguments: JsonObject): Boolean =
+        uses.any { it.call.name == tool.name && it.call.arguments == arguments && !it.output.isError }
 
     private fun checkArguments(tool: AgentTool, candidates: List<JsonObject>): Checked {
         var firstFailure: Checked.Invalid? = null
@@ -440,6 +445,7 @@ internal class TurnEngine(
  * holding back text while it could still be such a label.
  */
 internal class ReplyCleaner(label: String) {
+    private val toolRecord = Regex("\\[[A-Za-z_][\\w.-]*(?: \\{[^\\n]*?\\})? → [^\\n]*?\\]")
     private val labels = listOf(label, "Assistant").distinct().map { it.lowercase() }
 
     fun visible(raw: String): String {
@@ -457,7 +463,8 @@ internal class ReplyCleaner(label: String) {
     }
 
     fun final(raw: String): String {
-        var text = visible(raw).trim()
+        // An echoed tool record in our own `[name {…} → …]` format is never part of a reply.
+        var text = visible(raw).replace(toolRecord, " ").replace(Regex("[ \t]{2,}"), " ").trim()
         if (text.length >= 2 && text.first() == '"' && text.last() == '"' && text.count { it == '"' } == 2) {
             text = text.substring(1, text.length - 1).trim()
         }

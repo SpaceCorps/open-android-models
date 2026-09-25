@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -104,12 +106,23 @@ public class OpenAICompatibleModel(
         }
         response.body().use { stream ->
             if (response.statusCode() !in 200..299) {
-                val text = runInterruptible { stream.readNBytes(MAX_ERROR_BYTES).decodeToString() }
+                val text = read { stream.readNBytes(MAX_ERROR_BYTES).decodeToString() }
                 throw httpError(response.statusCode(), text, response.headers().firstValue("Retry-After").orElse(null))
             }
             if (streaming) readEvents(stream) else readSingle(stream)
         }
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Runs a blocking read that cancellation can interrupt. An I/O error
+     * caused by that interruption is reported as the cancellation it is.
+     */
+    private suspend fun <T> read(block: () -> T): T = try {
+        runInterruptible { block() }
+    } catch (error: IOException) {
+        currentCoroutineContext().ensureActive()
+        throw transportError(error)
+    }
 
     private fun requestBody(request: GenerationRequest): JsonObject = buildJsonObject {
         put("model", model)
@@ -139,7 +152,7 @@ public class OpenAICompatibleModel(
         var usage: TokenUsage? = null
         var finish: FinishReason? = null
         while (true) {
-            val line = runInterruptible { reader.readLine() } ?: break
+            val line = read { reader.readLine() } ?: break
             if (!line.startsWith("data:")) continue
             val data = line.removePrefix("data:").trim()
             if (data == "[DONE]") break
@@ -158,7 +171,7 @@ public class OpenAICompatibleModel(
     }
 
     private suspend fun FlowCollector<GenerationChunk>.readSingle(stream: InputStream) {
-        val body = runInterruptible { stream.readAllBytes().decodeToString() }
+        val body = read { stream.readAllBytes().decodeToString() }
         val json = parse(body) ?: throw AgentError(AgentErrorCode.GENERATION_FAILED, "The server returned invalid JSON: ${body.take(200)}")
         val choice = (json["choices"] as? JsonArray)?.firstOrNull()?.objectValue
             ?: throw AgentError(AgentErrorCode.GENERATION_FAILED, "The server returned no choices.")

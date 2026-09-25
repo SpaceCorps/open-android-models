@@ -1,5 +1,8 @@
 package com.spacecorps.oam
 
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+
 /** What a model step must produce. */
 internal sealed interface PromptTask {
     data class Decide(val tools: List<AgentTool>, val allowRespond: Boolean, val repair: Repair? = null) : PromptTask
@@ -42,6 +45,7 @@ internal class PromptRenderer(
     private val capabilities: ModelCapabilities,
     private val context: ContextPolicy,
     private val countTokens: suspend (String) -> Int?,
+    private val structuredReply: ((JsonElement) -> String)? = null,
 ) {
     private val tokenCache = HashMap<String, Int>()
 
@@ -57,16 +61,14 @@ internal class PromptRenderer(
         val systemField = if (capabilities.systemInstructions) systemText else null
         // Without system instruction support, the instruction leads the (stable) prompt prefix.
         val inlineSystem = if (capabilities.systemInstructions) null else systemText
-        val prefix = buildString {
-            inlineSystem?.let { append(it).append("\n\n") }
-            (task as? PromptTask.Decide)?.let { append(toolCatalog(it)) }
-        }.ifEmpty { null }
-        val taskText = taskSection(task)
+        val prefix = inlineSystem?.let { it + "\n\n" }
+        val lastMessage = prompt.trim().replace(Regex("\\s+"), " ").takeIf { it.isNotEmpty() }?.let { if (it.length > LAST_MESSAGE_CHARS) it.take(LAST_MESSAGE_CHARS) + "…" else it }
         val turns = turns(history)
 
         // A first plain request needs no transcript framing.
         val plain = turns.isEmpty() && uses.isEmpty() && prompt.isNotBlank() &&
             (task is PromptTask.Respond || task is PromptTask.Structured)
+        val taskText = taskSection(task, lastMessage, plain, hasToolResults = uses.isNotEmpty())
 
         fun compose(keptTurns: List<Turn>): String = buildString {
             if (plain) {
@@ -112,42 +114,64 @@ internal class PromptRenderer(
     // MARK: Sections
 
     private fun toolCatalog(task: PromptTask.Decide): String = buildString {
-        append("Tools:\n")
+        append(assistantLabel).append(" can use these tools:\n")
         for (tool in task.tools) {
             append("- ").append(tool.name).append(": ").append(tool.description.trim().ifEmpty { "(no description)" })
             append(" Arguments: ").append(tool.parameters.render()).append('\n')
         }
         if (task.allowRespond) {
-            append("- ").append(AgentTool.RESPOND_ACTION).append(": Reply to ").append(userLabel)
-                .append(" now, without a tool. Arguments: {}\n")
+            append(assistantLabel).append(" can also ").append(AgentTool.RESPOND_ACTION).append(": reply to ").append(userLabel).append(" without a tool.\n")
         }
-        append('\n')
     }
 
-    private fun taskSection(task: PromptTask): String = when (task) {
+    /** A concrete envelope for the format line (small models copy abstract templates literally). */
+    private fun example(tool: AgentTool): String {
+        val arguments = tool.parameters.propertyNames.joinToString(", ", "{", "}") { "\"$it\": …" }
+        return "{\"action\": \"${tool.name}\", \"arguments\": $arguments}"
+    }
+
+    private fun taskSection(task: PromptTask, lastMessage: String?, plain: Boolean, hasToolResults: Boolean): String = when (task) {
         is PromptTask.Decide -> buildString {
-            val names = task.tools.map { it.name } + if (task.allowRespond) listOf(AgentTool.RESPOND_ACTION) else emptyList()
+            append(toolCatalog(task)).append('\n')
+            lastMessage?.let { append(userLabel).append("'s last message: \"").append(it).append("\"\n") }
             if (task.allowRespond) {
-                append("Decide what ").append(assistantLabel).append(" does next. Use a tool to look something up or to act. ")
-                append("Choose ").append(AgentTool.RESPOND_ACTION).append(" if the conversation and the [tool results] above already have what is needed.\n")
+                append("What does ").append(assistantLabel).append(" do next? Use a tool only if the last message needs its information ")
+                append("or asks for what it does. Choose ").append(AgentTool.RESPOND_ACTION)
+                append(" for small talk, or if the conversation and the tool results in [brackets] already have what is needed.\n")
             } else {
                 append(assistantLabel).append(" must use one of the tools now.\n")
             }
-            append("Answer with one JSON object only: {\"action\": \"")
-            append(names.joinToString(" | ")).append("\", \"arguments\": {…}}")
+            append("Answer with one JSON object and nothing else, like ").append(example(task.tools.first()))
+            if (task.allowRespond) append(" or {\"action\": \"").append(AgentTool.RESPOND_ACTION).append("\", \"arguments\": {}}")
+            append('.')
             task.repair?.let { append(repairNote(it)) }
         }
         is PromptTask.ToolArguments -> buildString {
             append(assistantLabel).append(" calls the tool ").append(task.tool.name)
             task.tool.description.trim().takeIf { it.isNotEmpty() }?.let { append(" (").append(it.removeSuffix(".")).append(')') }
-            append(".\nWrite its arguments as one JSON object of this form:\n").append(task.tool.parameters.render())
+            append(".\nWrite its arguments as one JSON object with these keys:\n").append(task.tool.parameters.renderFields())
             append("\nAnswer with the JSON object only.")
             task.repair?.let { append(repairNote(it)) }
         }
-        PromptTask.Respond -> "Write $assistantLabel's reply to $userLabel's last message. Answer with the reply text only."
+        // Never mention the [bracketed] tool lines here: the model then echoes them into the reply.
+        PromptTask.Respond -> buildString {
+            append("Write ").append(assistantLabel).append("'s reply to ").append(userLabel).append("'s last message")
+            if (hasToolResults) append(", using the facts from the tool results above in your own words")
+            append(". Answer with only what ").append(assistantLabel).append(" says.")
+        }
         is PromptTask.Structured -> buildString {
-            append("Answer with one JSON object of this form:\n").append(task.schema.render())
-            append("\nAnswer with the JSON object only.")
+            val fields = task.schema.renderFields()
+            val keyed = fields.startsWith("- ")
+            val shape = if (keyed) "one JSON object with these keys:\n" else "JSON of this form:\n"
+            when {
+                plain -> append("Answer with ").append(shape)
+                // Quoting the message and asking for a *new* reply stops small models from copying their previous one.
+                lastMessage != null -> append("Write ").append(assistantLabel).append("'s new reply to ").append(userLabel)
+                    .append("'s last message (\"").append(lastMessage).append("\") as ").append(shape)
+                else -> append("Write ").append(assistantLabel).append("'s next reply as ").append(shape)
+            }
+            append(fields)
+            append(if (keyed) "\nAnswer with the JSON object only." else "\nAnswer with the JSON only.")
             task.repair?.let { append(repairNote(it)) }
         }
     }
@@ -172,8 +196,18 @@ internal class PromptRenderer(
 
     private fun line(entry: TranscriptEntry): String = when (entry) {
         is TranscriptEntry.Prompt -> "$userLabel: ${entry.text.trim()}"
-        is TranscriptEntry.Response -> "$assistantLabel: ${entry.text.trim()}"
+        is TranscriptEntry.Response -> "$assistantLabel: ${replyText(entry)}"
         is TranscriptEntry.ToolUse -> toolLine(entry)
+    }
+
+    /**
+     * A structured reply is shown as `key: value` prose, not JSON: a small
+     * model asked for JSON copies the last JSON it sees in the conversation.
+     */
+    private fun replyText(entry: TranscriptEntry.Response): String {
+        val structured = entry.structured ?: return entry.text.trim()
+        structuredReply?.let { return it(structured).trim() }
+        return describeStructured(structured)
     }
 
     private fun toolLine(use: TranscriptEntry.ToolUse): String {
@@ -194,6 +228,13 @@ internal class PromptRenderer(
     companion object {
         private const val PRECISE_THRESHOLD = 0.6
         private const val REPAIR_ECHO_CHARS = 240
+        private const val LAST_MESSAGE_CHARS = 300
+
+        /** `emotion: happy; line: Welcome!` for objects, compact JSON otherwise. */
+        fun describeStructured(value: JsonElement): String {
+            val obj = value as? JsonObject ?: return value.toJsonString()
+            return obj.entries.joinToString("; ") { (key, child) -> "$key: " + (child.stringValue ?: child.toJsonString()) }
+        }
 
         fun composeSystem(instructions: String?, note: String?): String? {
             val parts = listOfNotNull(instructions?.trim()?.takeIf { it.isNotEmpty() }, note?.trim()?.takeIf { it.isNotEmpty() })
@@ -205,7 +246,7 @@ internal class PromptRenderer(
             entries.joinToString("\n") { entry ->
                 when (entry) {
                     is TranscriptEntry.Prompt -> "$userLabel: ${entry.text.trim()}"
-                    is TranscriptEntry.Response -> "$assistantLabel: ${entry.text.trim()}"
+                    is TranscriptEntry.Response -> "$assistantLabel: ${entry.structured?.let(::describeStructured) ?: entry.text.trim()}"
                     is TranscriptEntry.ToolUse -> {
                         val arguments = if (entry.call.arguments.isEmpty()) "" else " " + entry.call.arguments.toJsonString()
                         "[${entry.call.name}$arguments → ${entry.output.modelText.trim()}]"

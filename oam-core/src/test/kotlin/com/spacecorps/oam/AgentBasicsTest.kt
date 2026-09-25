@@ -51,10 +51,13 @@ class AgentBasicsTest {
 
         val kinds = model.requests.map { it.kind }
         assertEquals(listOf(GenerationKind.DECIDE, GenerationKind.DECIDE, GenerationKind.RESPOND), kinds)
-        // The tool catalog is the stable prompt prefix of decide steps.
-        assertTrue(model.requests[0].promptPrefix!!.contains("- check_menu: Look up today's menu and prices."))
-        // The reply step sees the tool result but no tool catalog.
+        // Decide steps list the tools after the conversation, next to the instruction.
+        assertTrue(model.requests[0].prompt.contains("- check_menu: Look up today's menu and prices. Arguments: {}"))
+        assertTrue(model.requests[0].prompt.contains("User's last message: \"What's on tap?\""))
+        // The reply step sees the tool result but no tool list.
         assertTrue(model.requests[2].prompt.contains("[check_menu → {\"ale\":3,\"stew\":5,\"bread\":1}]"))
+        assertTrue(!model.requests[2].prompt.contains("can use these tools"))
+        assertTrue(model.requests[2].prompt.contains("using the facts from the tool results above"))
         assertNull(model.requests[2].promptPrefix)
 
         val history = agent.history
@@ -74,6 +77,6 @@ class AgentBasicsTest {
         agent.respond("Drink?")
         val prompt = model.requests[1].prompt
         assertTrue(prompt.startsWith("Conversation:\nPlayer: Hello\nMira: Hi!\nPlayer: Drink?\n"), prompt)
-        assertTrue(prompt.endsWith("Write Mira's reply to Player's last message. Answer with the reply text only."), prompt)
+        assertTrue(prompt.endsWith("Write Mira's reply to Player's last message. Answer with only what Mira says."), prompt)
     }
 }

@@ -99,11 +99,24 @@ public class JsonSchema(public val json: JsonObject) {
     public fun order(value: JsonElement): JsonElement = SchemaEngine(json).order(value)
 
     /**
-     * A compact, TypeScript-like rendering for prompts, for example
-     * `{"item": string (menu item), "quantity": integer 1-10, "size"?: "small" | "large"}`.
-     * Optional properties are marked with `?`.
+     * A compact one-line rendering for prompts, for example
+     * `{"item": string (menu item), "quantity": integer 1-10, "size"?: one of "small", "large"}`.
+     * Optional properties are marked with `?`. Unions are written in words
+     * (`string or null`), because small models copy `|` syntax into their output.
      */
     public fun render(): String = SchemaEngine(json).render()
+
+    /**
+     * A key-per-line rendering of an object schema, which small models follow
+     * best when the whole answer is JSON:
+     * ```
+     * - "emotion": one of "happy", "sad"
+     * - "line": string, what Mira says
+     * - "endsConversation" (optional): true or false
+     * ```
+     * Other schemas render as [render].
+     */
+    public fun renderFields(): String = SchemaEngine(json).renderFields()
 
     /** Returns a copy with `description` set. */
     public fun described(description: String): JsonSchema = with("description", JsonPrimitive(description))

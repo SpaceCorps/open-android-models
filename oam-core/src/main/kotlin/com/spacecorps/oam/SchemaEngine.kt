@@ -309,18 +309,42 @@ internal class SchemaEngine(private val root: JsonObject) {
         }
         if (depth > RENDER_DEPTH) return "…"
         val schema = raw
-        schema["enum"]?.arrayValue?.let { values -> return values.joinToString(" | ") { it.toJsonString() } }
-        schema["const"]?.let { return it.toJsonString() }
-        (schema["anyOf"] ?: schema["oneOf"])?.arrayValue?.let { choices ->
-            return choices.joinToString(" | ") { render(it, depth + 1, refs) }
+        // Plain words, not TypeScript unions: small models copy `"a" | "b"` into their JSON.
+        schema["enum"]?.arrayValue?.let { values ->
+            return if (values.size == 1) "exactly ${values[0].toJsonString()}" else "one of " + values.joinToString(", ") { it.toJsonString() }
         }
-        schema["allOf"]?.arrayValue?.let { parts -> return parts.joinToString(" & ") { render(it, depth + 1, refs) } }
+        schema["const"]?.let { return "exactly ${it.toJsonString()}" }
+        (schema["anyOf"] ?: schema["oneOf"])?.arrayValue?.let { choices ->
+            return choices.joinToString(" or ") { render(it, depth + 1, refs) }
+        }
+        schema["allOf"]?.arrayValue?.let { parts -> return parts.joinToString(" and also ") { render(it, depth + 1, refs) } }
         val types = types(schema) ?: when {
             schema["properties"] != null -> listOf("object")
             schema["items"] != null -> listOf("array")
             else -> return "any"
         }
-        return types.joinToString(" | ") { type -> renderType(type, schema, depth, refs) }
+        return types.joinToString(" or ") { type -> renderType(type, schema, depth, refs) }
+    }
+
+    /**
+     * A key-per-line rendering of an object schema, which small models follow
+     * best for whole-answer JSON. Falls back to [render] for other schemas.
+     */
+    fun renderFields(): String {
+        val schema = resolve(root) as? JsonObject ?: return render()
+        val properties = schema["properties"] as? JsonObject
+        if (properties.isNullOrEmpty() || types(schema)?.contains("object") == false) return render()
+        val required = schema["required"]?.arrayValue?.mapNotNull { it.stringValue }?.toSet().orEmpty()
+        return properties.entries.joinToString("\n") { (name, child) ->
+            val description = (resolve(child) as? JsonObject)?.get("description")?.stringValue
+                ?: (child as? JsonObject)?.get("description")?.stringValue
+            buildString {
+                append("- \"").append(name).append('"')
+                if (name !in required) append(" (optional)")
+                append(": ").append(render(child, 1, emptySet()))
+                description?.let { append(", ").append(it) }
+            }
+        }
     }
 
     private fun renderType(type: String, schema: JsonObject, depth: Int, refs: Set<String>): String = when (type) {
@@ -348,6 +372,7 @@ internal class SchemaEngine(private val root: JsonObject) {
             schema["exclusiveMinimum"]?.let { (it as? JsonPrimitive)?.decimal() }?.let { append(" > ${plain(it)}") }
             schema["exclusiveMaximum"]?.let { (it as? JsonPrimitive)?.decimal() }?.let { append(" < ${plain(it)}") }
         }
+        "boolean" -> "true or false"
         else -> type
     }
 

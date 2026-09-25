@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -31,6 +32,8 @@ import kotlin.time.Duration.Companion.seconds
  *   structured output is invalid.
  * @property userLabel Label of the user's lines in the rendered conversation (for an NPC: `"Player"`).
  * @property assistantLabel Label of the agent's lines (for an NPC: its name).
+ * @property structuredReplyRenderer How an earlier structured reply appears in the rendered conversation
+ *   (for an NPC: its spoken line). Default: `key: value` pairs. Never JSON, which small models copy.
  */
 public data class AgentConfiguration(
     public val toolPolicy: ToolPolicy = ToolPolicy.Default,
@@ -47,6 +50,7 @@ public data class AgentConfiguration(
     public val repairsInvalidOutput: Boolean = true,
     public val userLabel: String = "User",
     public val assistantLabel: String = "Assistant",
+    public val structuredReplyRenderer: ((JsonElement) -> String)? = null,
 ) {
     init {
         require(decisionMaxTokens >= 16) { "decisionMaxTokens must be at least 16." }
