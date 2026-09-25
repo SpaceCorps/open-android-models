@@ -44,6 +44,7 @@ kotlin {
 
 dependencies {
     api(project(":oam-core"))
+    api(project(":oam-bridge"))
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.kotlinx.coroutines.android)
 

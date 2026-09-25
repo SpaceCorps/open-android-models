@@ -38,16 +38,14 @@ public object OamJni {
     private const val TAG = "OamJni"
 
     /**
-     * Creates each bridge's engine. Set it before the first [create] (for
-     * example in `Application.onCreate`) to configure models and options.
-     *
-     * TODO(oam-bridge): default to a factory that hosts oam-bridge's `BridgeEngine` over
-     * `GeminiNanoModel` (plus the protocol's scripted models). Until then the default engine
-     * answers every request with a JSON-RPC error that says no engine is wired.
+     * Creates each bridge's engine. The default, a [BridgeEngineFactory], runs oam-bridge's
+     * `BridgeEngine` (the protocol above, including scripted models) over one shared
+     * `GeminiNanoModel`. Replace it before the first [create] (for example in
+     * `Application.onCreate`) to configure the model, limits or extensions.
      */
     @JvmStatic
     @Volatile
-    public var engineFactory: MessageEngineFactory = MessageEngineFactory { _, output -> UnwiredMessageEngine(output) }
+    public var engineFactory: MessageEngineFactory = BridgeEngineFactory()
 
     /** Delivers outgoing messages; replaced in tests, where the native library is absent. */
     @Volatile
