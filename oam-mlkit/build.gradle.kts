@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
+    `maven-publish`
 }
+
+description = "Gemini Nano through the ML Kit GenAI Prompt API as an oam-core LanguageModel, and OamJni, the JNI entry point that runs oam-bridge for native hosts."
 
 android {
     namespace = "com.spacecorps.oam.mlkit"
@@ -32,6 +35,12 @@ android {
         // ML Kit GenAI only ships betas; newer-version checks are not actionable here.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
 }
 
 kotlin {
@@ -39,6 +48,15 @@ kotlin {
     explicitApi()
     compilerOptions {
         allWarningsAsErrors = true
+    }
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            // AGP creates the "release" component after the build script runs.
+            afterEvaluate { from(components["release"]) }
+        }
     }
 }
 

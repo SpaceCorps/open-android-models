@@ -41,6 +41,13 @@ These facts drive the design.
 
 Everything except `oam-mlkit` and `sample` is plain JVM code, so it is fully unit-tested on the desktop with the scripted model.
 
+The four libraries are published as `com.spacecorps.oam:<module>:<version>`, with the version set in `gradle.properties`. `oam-core`, `oam-game` and `oam-bridge` are JARs and `oam-mlkit` is an AAR (its release variant); each comes with a sources JAR. There is no remote repository yet. To consume them, either:
+
+- run `./gradlew publishToMavenLocal` and add `mavenLocal()`, or
+- add `includeBuild("path/to/open-android-models")` to the consumer's `settings.gradle.kts`. Gradle then substitutes the projects for the same coordinates.
+
+Consumers need Kotlin 2.3 or newer, because the classes carry Kotlin 2.4 metadata. AGP 9's built-in Kotlin defaults to KGP 2.2, so add the plugin to the build classpath: `id("org.jetbrains.kotlin.jvm") version "2.4.20" apply false`. JVM consumers also need Java 21. An Android build that includes this one must use the same AGP version (9.4.1), since AGP refuses two versions in one build.
+
 ## Core contracts
 
 ```kotlin
