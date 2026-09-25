@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # compileSdk 37.1 (gradle/libs.versions.toml) and AGP 9.4.1's default
+      # build-tools. The runner image ships both; this is a no-op unless the
+      # image drops them.
+      - name: Install Android SDK packages
+        run: echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.1" "build-tools;36.0.0"
+
+      # The 'basic' provider is the MIT-licensed cache (GitHub Actions cache).
+      # The default 'enhanced' provider is proprietary and needs Gradle's terms of use.
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      # Tests, lint and assemble. The live evals and conformance checks are
+      # opt-in (OAM_PROXY_EVAL, OAM_APPLE_BRIDGE, OAM_JNI_PROBE_LIB) and skip here.
+      - name: Build
+        run: ./gradlew build --console=plain
+
+      - name: Publish to Maven Local
+        run: ./gradlew publishToMavenLocal --console=plain
+
+      - name: Upload test and lint reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports
+          path: |
+            */build/reports/tests/
+            */build/test-results/
+            */build/reports/lint-results-*
+          if-no-files-found: ignore
