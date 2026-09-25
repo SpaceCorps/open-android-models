@@ -32,3 +32,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Kotlin compiler daemon/session data
+.kotlin/
