@@ -19,10 +19,27 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+
+    testOptions {
+        // JVM unit tests touch android.util.Log and android.content.Context stubs.
+        unitTests.isReturnDefaultValues = true
+    }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        checkDependencies = false
+        // ML Kit GenAI only ships betas; newer-version checks are not actionable here.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
+    }
 }
 
 kotlin {
     jvmToolchain(libs.versions.jvm.toolchain.get().toInt())
+    explicitApi()
+    compilerOptions {
+        allWarningsAsErrors = true
+    }
 }
 
 dependencies {
@@ -39,4 +56,8 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
