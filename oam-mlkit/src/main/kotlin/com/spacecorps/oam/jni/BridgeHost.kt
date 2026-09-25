@@ -88,7 +88,9 @@ public class BridgeHost(
 
     /** Destroys every bridge. The host stays usable. */
     override fun close() {
-        bridges.keys.toList().forEach { destroy(it) }
+        // ArrayList's constructor snapshots with toArray, which tolerates a concurrent destroy
+        // (toList() reads size() first and can then throw NoSuchElementException).
+        ArrayList(bridges.keys).forEach { destroy(it) }
     }
 
     private inner class Bridge(val id: Long, val handle: Long) : MessageSink {
