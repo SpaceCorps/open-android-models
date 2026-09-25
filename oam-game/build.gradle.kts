@@ -46,6 +46,14 @@ tasks.test {
     inputs.property("proxyEval", System.getenv("OAM_PROXY_EVAL") ?: "")
     // A live eval always runs: its result depends on the model, not on the inputs.
     if (System.getenv("OAM_PROXY_EVAL") == "1") outputs.upToDateWhen { false }
+    // ReadmeExamplesTest compares the README's Kotlin examples with their tested copies (here and
+    // in oam-mlkit) and its OamJni outline with OamJni.kt, so a change to any of them reruns it.
+    inputs.files(
+        rootProject.file("README.md"),
+        file("src/test/kotlin/com/spacecorps/oam/readme/ReadmeExamplesTest.kt"),
+        rootProject.file("oam-mlkit/src/test/kotlin/com/spacecorps/oam/readme/ReadmeAndroidExamples.kt"),
+        rootProject.file("oam-mlkit/src/main/kotlin/com/spacecorps/oam/jni/OamJni.kt"),
+    ).withPropertyName("readmeExamples").withPathSensitivity(PathSensitivity.RELATIVE)
     testLogging {
         events("failed", "skipped")
         showStandardStreams = System.getenv("OAM_PROXY_EVAL") == "1"
