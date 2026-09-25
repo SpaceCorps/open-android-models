@@ -111,7 +111,8 @@ public data class ToolPolicy(
  *   prompt would exceed the input limit. The transcript keeps them.
  * @property reservedTokens Safety margin below [ModelCapabilities.maxInputTokens]
  *   (token counts are often estimates).
- * @property minimumRecentTurns Completed turns always kept, when they fit.
+ * @property minimumRecentTurns The most recent completed turns that are never trimmed, even if the
+ *   prompt then exceeds the limit (the backend reports [AgentErrorCode.CONTEXT_SIZE_EXCEEDED]).
  * @property maxToolOutputChars Longer tool outputs are shortened in the prompt.
  */
 public data class ContextPolicy(

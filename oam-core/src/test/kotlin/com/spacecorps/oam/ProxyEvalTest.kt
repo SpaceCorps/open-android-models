@@ -113,7 +113,8 @@ class ProxyEvalTest {
         val decideMillis = ArrayList<Long>()
         val respondMillis = ArrayList<Long>()
 
-        for (choice in listOf(ToolChoice.Explicit)) {
+        val runs = System.getenv("OAM_PROXY_EVAL_RUNS")?.toIntOrNull()?.coerceIn(1, 10) ?: 1
+        for (choice in List(runs) { ToolChoice.Explicit }) {
             val model = RecordingModel(base)
             val orders = mutableListOf<ToolCall>()
             val toolSet = tools(orders)
@@ -194,7 +195,8 @@ class ProxyEvalTest {
         fun p90(values: List<Long>) = values.sorted().let { if (it.isEmpty()) 0 else it[((it.size - 1) * 9) / 10] }
         log("")
         log("SUMMARY")
-        log("  turns=${conversation.size} correct first action=$correct/${conversation.size} (${100 * correct / conversation.size}%)")
+        val turns = conversation.size * runs
+        log("  runs=$runs turns=$turns correct first action=$correct/$turns (${100 * correct / turns}%)")
         log("  decide outputs=$decideCalls valid=$parsedAll (${pct(parsedAll, decideCalls)}); first attempts=$firstTries valid=$parsedFirstTry (${pct(parsedFirstTry, firstTries)})")
         log("  latency: turn avg=${avg(turnMillis)}ms p90=${p90(turnMillis)}ms; decide avg=${avg(decideMillis)}ms; respond avg=${avg(respondMillis)}ms")
         File("build").mkdirs()
@@ -319,6 +321,83 @@ class ProxyEvalTest {
         agent.close()
         File("build").mkdirs()
         File("build/proxy-eval-forced.txt").writeText(report.toString())
+    }
+
+    /** A gate guard with five tools (the upper end Gemini Nano handles well), fresh context per line. */
+    @Test
+    fun guardWithFiveTools() = runBlocking {
+        val base = OpenAICompatibleModel(baseUrl, modelName)
+        val report = StringBuilder()
+        fun log(line: String) {
+            println(line)
+            report.appendLine(line)
+        }
+        val guardTools = listOf(
+            AgentTool.local("open_gate", "Open a city gate when someone asks for it.", JsonSchema.obj("gate" to JsonSchema.string(enum = listOf("north", "south")))) {
+                ToolOutput.of(mapOf("opened" to true))
+            },
+            AgentTool.local("check_pass", "Check whether a named traveler is on the list of allowed visitors.", JsonSchema.obj("name" to JsonSchema.string(description = "the traveler's name"))) {
+                ToolOutput.of(mapOf("allowed" to (it.string("name").lowercase() == "aldric")))
+            },
+            AgentTool.local("ring_alarm", "Ring the alarm bell when the city is under attack.") { ToolOutput.of(mapOf("ringing" to true)) },
+            AgentTool.local("read_notice_board", "Read today's notices and news.") { ToolOutput.Text("Market day tomorrow. Curfew at midnight.") },
+            AgentTool.local("give_directions", "Look up the way to a place in the city.", JsonSchema.obj("place" to JsonSchema.string(enum = listOf("tavern", "smithy", "castle")))) {
+                ToolOutput.Text("Down the main road, second left.")
+            },
+        )
+        val lines = listOf(
+            Line("Good evening, guard.", setOf("respond")),
+            Line("Could you open the north gate for me?", setOf("open_gate"), mapOf("gate" to "north")),
+            Line("My name is Aldric, am I on the list?", setOf("check_pass"), mapOf("name" to "aldric")),
+            Line("Bandits! They're attacking the south wall!", setOf("ring_alarm")),
+            Line("Where can I find the smithy?", setOf("give_directions"), mapOf("place" to "smithy")),
+            Line("Any news posted today?", setOf("read_notice_board")),
+            Line("You look tired. Long shift?", setOf("respond")),
+            Line("Open the south gate, please.", setOf("open_gate"), mapOf("gate" to "south")),
+            Line("How do I get to the castle?", setOf("give_directions"), mapOf("place" to "castle")),
+            Line("Farewell, and stay safe.", setOf("respond")),
+        )
+        var correct = 0
+        var valid = 0
+        var decides = 0
+        var errors = 0
+        log("== guard with five tools (Explicit), ${lines.size} lines")
+        for (line in lines) {
+            val model = RecordingModel(base)
+            val agent = Agent(
+                model,
+                instructions = "You are Brom, a gruff but fair gate guard of Highcastle in a fantasy game. Reply in one or two short sentences.",
+                tools = guardTools,
+                configuration = AgentConfiguration(
+                    toolPolicy = ToolPolicy(choice = ToolChoice.Explicit, maxToolRounds = 1),
+                    userLabel = "Traveler",
+                    assistantLabel = "Brom",
+                    retry = RetryPolicy.None,
+                ),
+            )
+            val response = try {
+                agent.respond(line.text)
+            } catch (error: AgentError) {
+                errors++
+                log("  ERR  ${line.text} -> ${error.code.wireName}: ${error.message.take(80)}")
+                agent.close()
+                continue
+            }
+            val first = response.toolCalls.firstOrNull()
+            val action = first?.call?.name ?: "respond"
+            val argumentsOk = line.expectedArguments?.let { expected -> first != null && matches(first.call, expected) } ?: true
+            val ok = action in line.expected && argumentsOk
+            if (ok) correct++
+            model.calls.filter { it.request.kind == GenerationKind.DECIDE }.forEach { call ->
+                decides++
+                if (StepEnvelope.parse(call.output, guardTools.map { it.name }, true) !is StepEnvelope.Result.Invalid) valid++
+            }
+            log("  ${if (ok) "OK  " else "MISS"} ${line.text} -> $action${first?.call?.arguments?.toJsonString().orEmpty()} | ${response.text}")
+            agent.close()
+        }
+        log("  correct=$correct/${lines.size} model errors=$errors envelopes parsed=$valid/$decides")
+        File("build").mkdirs()
+        File("build/proxy-eval-guard.txt").writeText(report.toString())
     }
 
     private fun matches(call: ToolCall, expected: Map<String, Any>): Boolean = expected.all { (key, value) ->

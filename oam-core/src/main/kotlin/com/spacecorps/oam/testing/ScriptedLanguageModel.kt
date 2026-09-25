@@ -102,6 +102,7 @@ public class ScriptedLanguageModel(
          * script it plays as the envelope of its first call.
          */
         public data class ToolCalls(public val calls: List<ScriptedCall>) : Step {
+            /** A round of [calls]. */
             public constructor(vararg calls: ScriptedCall) : this(calls.toList())
         }
 
