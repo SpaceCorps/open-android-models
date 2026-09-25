@@ -82,6 +82,8 @@ internal class TurnEngine(
                 first && forced != null -> argumentsStep(forced)
                 // Required with a single tool is the same as naming it.
                 first && policy.choice == ToolChoice.Required && enabled.size == 1 -> argumentsStep(enabled.single())
+                // After a forced tool, nothing else may be enabled.
+                enabled.isEmpty() -> Decision.Respond
                 else -> decideStep(enabled, allowRespond = !(first && policy.choice == ToolChoice.Required))
             }
             when (decision) {
@@ -448,12 +450,13 @@ internal class ReplyCleaner(label: String) {
     private val toolRecord = Regex("\\[[A-Za-z_][\\w.-]*(?: \\{[^\\n]*?\\})? → [^\\n]*?\\]")
     private val labels = listOf(label, "Assistant").distinct().map { it.lowercase() }
 
-    fun visible(raw: String): String {
+    fun visible(raw: String, complete: Boolean = false): String {
         val text = raw.trimStart()
         val lower = text.lowercase().trimStart('*', '_')
         for (label in labels) {
             val marker = "$label:"
-            if (lower.length < marker.length + 1 && marker.startsWith(lower.trimEnd('*', '_'))) return "" // might still become a label
+            // While streaming, hold back text that might still become a label.
+            if (!complete && lower.length < marker.length + 1 && marker.startsWith(lower.trimEnd('*', '_'))) return ""
             if (lower.startsWith(marker) || lower.startsWith("$label**:") || lower.startsWith("$label:**")) {
                 val cut = text.indexOf(':') + 1
                 return text.substring(cut).trimStart('*', '_', ' ', '\t', '\n')
@@ -464,7 +467,7 @@ internal class ReplyCleaner(label: String) {
 
     fun final(raw: String): String {
         // An echoed tool record in our own `[name {…} → …]` format is never part of a reply.
-        var text = visible(raw).replace(toolRecord, " ").replace(Regex("[ \t]{2,}"), " ").trim()
+        var text = visible(raw, complete = true).replace(toolRecord, " ").replace(Regex("[ \t]{2,}"), " ").trim()
         if (text.length >= 2 && text.first() == '"' && text.last() == '"' && text.count { it == '"' } == 2) {
             text = text.substring(1, text.length - 1).trim()
         }

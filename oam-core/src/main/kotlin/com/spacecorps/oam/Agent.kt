@@ -2,7 +2,6 @@ package com.spacecorps.oam
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -110,7 +109,8 @@ public class Agent(
     private val lock = Any()
     private val ownsScope = scope == null
     private val scope: CoroutineScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var tail: Job? = null
+    private var tail: CompletableDeferred<Unit>? = null
+    private val jobs = LinkedHashSet<Job>()
 
     private var currentInstructions: String? = instructions
     private var currentNote: String? = history?.contextNote
@@ -324,7 +324,7 @@ public class Agent(
         if (ownsScope) {
             scope.cancel()
         } else {
-            synchronized(lock) { tail }?.cancel()
+            synchronized(lock) { jobs.toList() }.forEach { it.cancel() }
         }
     }
 
@@ -344,15 +344,27 @@ public class Agent(
     private fun failed(error: AgentError, policy: ToolPolicy?): AgentRun =
         AgentRun(policy ?: configuration.toolPolicy).also { it.finish(Result.failure(error)) }
 
-    /** Runs [work] after everything queued before it, in arrival order. */
+    /**
+     * Runs [work] after everything queued before it, in arrival order.
+     *
+     * Each entry has a completion token that completes only once the entry
+     * *and its predecessor* are done, even when the entry is cancelled before
+     * it starts; the next entry waits for that token, so nothing queued can
+     * overtake a running turn.
+     */
     private fun enqueue(work: suspend () -> Unit): Job = synchronized(lock) {
         val previous = tail
-        val job = scope.launch(start = CoroutineStart.LAZY) {
-            previous?.join()
+        val done = CompletableDeferred<Unit>()
+        tail = done
+        val job = scope.launch {
+            previous?.await()
             work()
         }
-        tail = job
-        job.start()
+        jobs += job
+        job.invokeOnCompletion {
+            synchronized(lock) { jobs -= job }
+            if (previous == null) done.complete(Unit) else previous.invokeOnCompletion { done.complete(Unit) }
+        }
         job
     }
 

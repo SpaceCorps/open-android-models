@@ -87,7 +87,8 @@ internal class SchemaEngine(private val root: JsonObject) {
             matches == 1 || (matches > 1 && !exactlyOne) -> Unit
             matches > 1 -> out += SchemaViolation(path, "matches $matches of the alternatives but must match exactly one")
             else -> {
-                val closest = results.minBy { it.size }
+                // An alternative of the wrong type is the least helpful to report.
+                val closest = results.minWith(compareBy({ result -> result.any { it.path == path && it.message.startsWith("expected ") } }, { it.size }))
                 out += SchemaViolation(path, "does not match any of the ${choices.size} allowed alternatives (closest: ${closest.describe(2)})")
             }
         }
