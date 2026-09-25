@@ -27,8 +27,14 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Opt-in live checks: AppleConformanceTest (OAM_APPLE_BRIDGE) and ProxyBridgeEvalTest (OAM_PROXY_EVAL).
+    val live = listOf("OAM_APPLE_BRIDGE", "OAM_PROXY_EVAL", "OAM_PROXY_URL", "OAM_PROXY_MODEL")
+    live.forEach { name -> System.getenv(name)?.let { environment(name, it) } }
+    inputs.property("liveChecks", live.joinToString(",") { System.getenv(it) ?: "" })
+    if (live.any { !System.getenv(it).isNullOrEmpty() }) outputs.upToDateWhen { false }
     testLogging {
         events("failed", "skipped")
+        showStandardStreams = live.any { !System.getenv(it).isNullOrEmpty() }
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }

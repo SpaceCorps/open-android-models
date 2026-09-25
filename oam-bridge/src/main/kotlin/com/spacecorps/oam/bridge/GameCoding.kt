@@ -1,5 +1,7 @@
 package com.spacecorps.oam.bridge
 
+import com.spacecorps.oam.OamJson
+import com.spacecorps.oam.Transcript
 import com.spacecorps.oam.arrayValue
 import com.spacecorps.oam.boolValue
 import com.spacecorps.oam.bridge.BridgeCoding.obj
@@ -119,8 +121,13 @@ public object GameCoding {
         return JsonObject(members)
     }
 
-    /** A save state as `{"version", "persona", "memory", "transcript"}`. */
-    public fun json(state: NPCSaveState): JsonObject = state.toJson() as JsonObject
+    /** A save state as `{"version", "persona", "memory", "transcript"}` (readable by [NPCSaveState.fromJson]). */
+    public fun json(state: NPCSaveState): JsonObject = obj(
+        "version" to JsonPrimitive(state.version),
+        "persona" to json(state.persona),
+        "memory" to json(state.memory),
+        "transcript" to OamJson.encodeToJsonElement(Transcript.serializer(), state.transcript),
+    )
 
     // MARK: Decoding
 
@@ -332,7 +339,7 @@ public object GameCoding {
                 val text = value.stringValue ?: throw mistyped(path, "a string")
                 val allowed = (0 until descriptor.elementsCount).map(descriptor::getElementName)
                 if (text !in allowed) {
-                    throw BridgeError.invalidParams("Parameter '$path' must be one of ${allowed.joinToString(", ") { "\"$it\"" }}; got '$text'.")
+                    throw BridgeError.invalidParams("'$path' must be one of ${allowed.joinToString(", ") { "\"$it\"" }}; got '$text'.")
                 }
             }
             StructureKind.LIST -> {

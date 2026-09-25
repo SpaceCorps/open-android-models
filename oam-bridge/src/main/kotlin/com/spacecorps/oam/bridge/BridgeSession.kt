@@ -1,6 +1,7 @@
 package com.spacecorps.oam.bridge
 
 import com.spacecorps.oam.Agent
+import com.spacecorps.oam.TranscriptEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,7 +64,10 @@ public class BridgeSession(
     /** Operations running or waiting on this session. */
     public val pendingOperations: Int get() = queue.pendingOperations
 
-    /** A summary for `session/list`: `{session, model, instructions?, tools, busy, pendingOperations, entries, createdAt}`. */
+    /**
+     * A summary for `session/list`: `{session, model, instructions?, tools, busy, pendingOperations, entries, createdAt}`.
+     * `entries` counts transcript entries as open-apple-models does: prompts, responses, tool calls and tool outputs.
+     */
     public val summary: JsonObject
         get() {
             val members = linkedMapOf<String, JsonElement>(
@@ -75,7 +79,8 @@ public class BridgeSession(
             val pending = pendingOperations
             members["busy"] = JsonPrimitive(pending > 0)
             members["pendingOperations"] = JsonPrimitive(pending)
-            members["entries"] = JsonPrimitive(agent.history.size)
+            // As on Apple, a tool call and its output are two entries.
+            members["entries"] = JsonPrimitive(agent.history.sumOf { if (it is TranscriptEntry.ToolUse) 2L else 1L })
             members["createdAt"] = JsonPrimitive(timestamp(createdAt))
             return JsonObject(members)
         }
