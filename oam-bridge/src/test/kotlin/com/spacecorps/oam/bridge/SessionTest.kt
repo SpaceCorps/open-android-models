@@ -1,6 +1,7 @@
 package com.spacecorps.oam.bridge
 
 import com.spacecorps.oam.Transcript
+import com.spacecorps.oam.TranscriptEntry
 import com.spacecorps.oam.testing.ScriptedLanguageModel
 import com.spacecorps.oam.toJsonString
 import kotlinx.coroutines.delay
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.Collections
+import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -370,6 +372,37 @@ class SessionTest {
             val transcript = assertNotNull(harness.result("session/transcript", """{"session": "$id"}""")["transcript"])
             assertEquals(0, BridgeCoding.transcript(transcript).entries.size)
             assertEquals(0, harness.result("session/list")["sessions"][0]["entries"].int)
+            harness.engine.close()
+        }
+    }
+
+    /**
+     * `session/cancel` racing the peer's answer to a tool call (and the turn's commit): whichever
+     * wins, every response must match the transcript. Before the fix, this caught a turn reported
+     * `cancelled` that still committed in a few percent of iterations.
+     */
+    @Test
+    fun cancelRacingAToolAnswerKeepsResponsesAndHistoryInStep() = runBlocking<Unit> {
+        val random = Random(7)
+        repeat(150) {
+            val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, defaultToolTimeout = null))
+            val id = harness.createSession(
+                steps = """[{"toolCalls": [{"name": "open_gate", "arguments": {"gate": "x"}}]}, {"text": "Opened."}, {"text": "Again."}]""",
+                tools = "[$openGate]",
+            )
+            val requests = listOf("Open", "Again").map { it to harness.send("session/respond", """{"session": "$id", "prompt": "$it"}""") }
+            val call = harness.box.wait { it["method"].str == "tool/call" }
+            val answering = harness.answerLater(call, random.nextLong(0, 2000))
+            spinMicros(random.nextLong(0, 2000))
+            harness.notify("session/cancel", j("""{"session": "$id"}"""))
+            answering.join()
+            val responses = requests.map { (prompt, request) -> prompt to harness.response(request) }
+            responses.filter { it.second["result"] == null }.forEach { assertEquals("cancelled", it.second.errorName, "${it.first}: ${it.second}") }
+            val transcript = assertNotNull(harness.result("session/transcript", """{"session": "$id"}""")["transcript"])
+            assertEquals(
+                responses.filter { it.second["result"] != null }.map { it.first },
+                BridgeCoding.transcript(transcript).entries.filterIsInstance<TranscriptEntry.Prompt>().map { it.text },
+            )
             harness.engine.close()
         }
     }

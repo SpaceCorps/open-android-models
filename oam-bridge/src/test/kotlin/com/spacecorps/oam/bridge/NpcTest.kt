@@ -1,5 +1,6 @@
 package com.spacecorps.oam.bridge
 
+import com.spacecorps.oam.TranscriptEntry
 import com.spacecorps.oam.game.NPC
 import com.spacecorps.oam.game.WorldState
 import kotlinx.coroutines.runBlocking
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import java.util.Collections
+import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -219,6 +221,34 @@ class NpcTest {
             assertEquals(0, harness.result("npc/list")["npcs"][0]["turnCount"].int)
             val state = assertNotNull(harness.result("npc/state", """{"npc": "gorm", "settle": false}""")["state"])
             assertEquals(0, GameCoding.saveState(state).transcript.entries.size)
+            harness.engine.close()
+        }
+    }
+
+    /** `npc/cancel` racing the peer's answer to a tool call (see SessionTest.cancelRacingAToolAnswerKeepsResponsesAndHistoryInStep). */
+    @Test
+    fun cancelRacingAToolAnswerKeepsResponsesAndHistoryInStep() = runBlocking<Unit> {
+        val random = Random(7)
+        repeat(150) {
+            val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, defaultToolTimeout = null))
+            harness.createNpc(
+                steps = """[{"toolCalls": [{"name": "check_inventory", "arguments": {"item": "shield"}}]}, ${reply("Shields.")}, ${reply("Helmets.")}]""",
+                tools = "[$inventory]",
+            )
+            val requests = listOf("Shields?", "And helmets?").map { it to harness.send("npc/talk", """{"npc": "gorm", "line": "$it"}""") }
+            val call = harness.box.wait(2.seconds, "tool/call") { it["method"].str == "tool/call" }
+            val answering = harness.answerLater(call, random.nextLong(0, 2000))
+            spinMicros(random.nextLong(0, 2000))
+            harness.notify("npc/cancel", j("""{"npc": "gorm"}"""))
+            answering.join()
+            val responses = requests.map { (line, request) -> line to harness.response(request) }
+            responses.filter { it.second["result"] == null }.forEach { assertEquals("cancelled", it.second.errorName, "${it.first}: ${it.second}") }
+            val completed = responses.filter { it.second["result"] != null }.map { it.first }
+            assertEquals(completed.size, harness.result("npc/list")["npcs"][0]["turnCount"].int)
+            val state = assertNotNull(harness.result("npc/state", """{"npc": "gorm", "settle": false}""")["state"])
+            val prompts = GameCoding.saveState(state).transcript.entries.filterIsInstance<TranscriptEntry.Prompt>().map { it.text }
+            assertEquals(completed.size, prompts.size)
+            completed.zip(prompts).forEach { (line, prompt) -> assertTrue(line in prompt, "'$line' not in '$prompt'") }
             harness.engine.close()
         }
     }

@@ -185,6 +185,15 @@ internal class BridgeHarness(configuration: BridgeConfiguration = BridgeConfigur
 
     fun responseIndex(id: String): Int? = box.index { it["id"].str == id && it["method"] == null }
 
+    /** Answers the `tool/call` message [call] with `{"text": text}` from another thread after [micros] µs. */
+    fun answerLater(call: JsonElement, micros: Long, text: String = "ok"): Thread {
+        val answer = """{"jsonrpc": "2.0", "id": ${call["id"]}, "result": {"text": ${JsonPrimitive(text)}}}"""
+        return Thread {
+            spinMicros(micros)
+            engine.receive(answer)
+        }.also { it.start() }
+    }
+
     companion object {
         val TEST_AVAILABILITY = BridgeModelAvailability(available = true, contextSize = 4096, variant = "Scripted", supportedLanguages = listOf("en"))
 
@@ -202,6 +211,12 @@ internal class BridgeHarness(configuration: BridgeConfiguration = BridgeConfigur
             return """{"json": {"emotion": "$emotion", "line": ${JsonPrimitive(line)}, "player_options": [$quotedOptions], "ends_conversation": $ends}}"""
         }
     }
+}
+
+/** Busy-waits [micros] µs (finer than `delay`, for racing two events). */
+internal fun spinMicros(micros: Long) {
+    val end = System.nanoTime() + micros * 1000
+    while (System.nanoTime() < end) Thread.onSpinWait()
 }
 
 /** Collects log messages. */

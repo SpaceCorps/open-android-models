@@ -29,13 +29,16 @@ import java.util.concurrent.ConcurrentHashMap
  *   response is ignored).
  * - **Streaming:** when [stream] is true, every event is sent as an
  *   [eventMethod] notification (`params` = [context] + `requestId` + `event`).
- * - **Cancellation:** cancelling the calling coroutine cancels the run.
+ * - **Cancellation:** cancelling the calling coroutine cancels the run, and
+ *   this returns once the run has ended: it throws `cancelled` after the turn
+ *   has rolled back, or returns the response of a turn that completed (and is
+ *   in the history) before the cancellation reached it.
  *
  * All notifications and `tool/call` requests are queued before this returns,
  * so they reach the peer before the request's response.
  *
  * @param context Fields identifying the conversation, such as `{"session": "s1"}` or `{"npc": "gorm"}`.
- * @throws BridgeError when the turn fails (`cancelled` when it was cancelled).
+ * @throws BridgeError when the turn fails (`cancelled` when it was cancelled before completing).
  */
 public suspend fun BridgeRequest.drive(
     run: AgentRun,
@@ -83,7 +86,9 @@ internal class ToolForwarder(
 
     /** The turn ended: cancel every call still waiting for the peer. */
     fun finish() {
-        val leftover = pending.keys.sorted().mapNotNull { key -> pending.remove(key)?.let { key to it } }
+        // Snapshot with toArray (ArrayList's constructor): answers arriving meanwhile remove keys, and
+        // Kotlin's toList()/sorted() would read size() and then iterate, throwing NoSuchElementException.
+        val leftover = ArrayList(pending.keys).sorted().mapNotNull { key -> pending.remove(key)?.let { key to it } }
         for ((callId, request) in leftover) cancel(request, callId, "The turn ended before the tool finished.")
     }
 

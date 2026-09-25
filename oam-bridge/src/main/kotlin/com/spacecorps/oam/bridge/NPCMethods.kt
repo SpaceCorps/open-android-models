@@ -344,7 +344,7 @@ internal object NPCMethods {
  * Bridges one NPC turn ([DialogueStream]) to the peer, like the session turn
  * driver: external tool calls become `tool/call` requests, streamed events
  * become `npc/event` notifications, and cancelling the calling coroutine
- * cancels the turn.
+ * cancels the turn and waits for it to end (see [turnOutcome]).
  */
 internal class DialogueDriver(
     private val engine: BridgeEngine,
