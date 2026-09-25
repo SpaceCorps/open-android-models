@@ -27,7 +27,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     // The live proxy eval (GameProxyEvalTest) only runs when OAM_PROXY_EVAL=1.
-    listOf("OAM_PROXY_EVAL", "OAM_PROXY_EVAL_RUNS", "OAM_PROXY_URL", "OAM_PROXY_MODEL").forEach { name ->
+    listOf("OAM_PROXY_EVAL", "OAM_PROXY_EVAL_RUNS", "OAM_PROXY_EVAL_ONLY", "OAM_PROXY_URL", "OAM_PROXY_MODEL").forEach { name ->
         System.getenv(name)?.let { environment(name, it) }
     }
     inputs.property("proxyEval", System.getenv("OAM_PROXY_EVAL") ?: "")

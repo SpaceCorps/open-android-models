@@ -101,7 +101,9 @@ public enum class NPCReplyFormat {
  *   [ToolChoice.Required] always calls a tool first.
  * @property groundingTool A tool the NPC must call first on every turn (for example `check_inventory` for a
  *   shopkeeper, `read_world_state` for a quest giver). Overrides [toolChoice]. Only the tool's arguments are
- *   generated, so it costs one short model step plus the tool.
+ *   generated, so it costs one short model step plus the tool. Afterwards the model may still use tools until
+ *   [maxToolRounds] is reached; with `maxToolRounds = 1` it replies right after the lookup, which saves a decide
+ *   step per turn (about 0.7–1 s on a ~3B model).
  * @property maxToolRounds Maximum tool rounds (decide, then call) in one turn.
  * @property maxToolCalls Maximum tool calls in one turn.
  * @property worldReadable World paths the NPC may read through `read_world_state` (when it has a world);

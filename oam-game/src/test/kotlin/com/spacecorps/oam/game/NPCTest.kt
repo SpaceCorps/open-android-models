@@ -220,7 +220,7 @@ class NPCTest {
         assertEquals(1, turn.toolCalls.size)
         // No schema was requested; the tag rule is in the instructions.
         assertEquals(GenerationKind.RESPOND, model.requests.last().kind)
-        assertTrue(model.requests[0].system.contains("Begin every reply with your current emotion in square brackets"))
+        assertTrue(model.requests[0].system.contains("Begin every spoken reply with your current emotion in square brackets"))
     }
 
     @Test

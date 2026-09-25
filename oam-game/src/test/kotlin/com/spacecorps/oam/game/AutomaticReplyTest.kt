@@ -41,7 +41,7 @@ class AutomaticReplyTest {
         assertTrue(turn.playerOptions.isEmpty())
         assertEquals(listOf(GenerationKind.STRUCTURED, GenerationKind.RESPOND), model.requests.map { it.kind })
         val retry = model.requests[1]
-        assertTrue(retry.system.contains("Begin every reply with your current emotion in square brackets"), retry.system)
+        assertTrue(retry.system.contains("Begin every spoken reply with your current emotion in square brackets"), retry.system)
         assertFalse(model.requests[0].system.contains("square brackets"))
         assertEquals(1, npc.turnCount)
     }

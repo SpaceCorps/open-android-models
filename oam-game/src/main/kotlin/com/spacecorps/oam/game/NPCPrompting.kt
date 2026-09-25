@@ -130,7 +130,7 @@ internal object NPCPrompting {
         if (tools.any { it.name == NPCMemoryTool.CHANGE_RELATIONSHIP.toolName }) {
             extra += "- When the player clearly pleases or offends you, call ${NPCMemoryTool.CHANGE_RELATIONSHIP.toolName}."
         }
-        if (textReply) extra += "- Begin every reply with your current emotion in square brackets, such as [happy] or [angry]."
+        if (textReply) extra += "- Begin every spoken reply with your current emotion in square brackets, such as [happy] or [angry]."
         val visibility = options.secretsUnlockAtRelationship?.let { threshold ->
             if (memory.relationship >= threshold) Persona.SecretVisibility.SHAREABLE else Persona.SecretVisibility.HIDDEN
         } ?: Persona.SecretVisibility.GUARDED
@@ -222,7 +222,7 @@ internal object NPCPrompting {
         )
         properties["line"] = JsonSchema.string(
             description = "What $name says out loud, in character. At most $sentences short ${if (sentences == 1) "sentence" else "sentences"}. " +
-                "If a tool was just used, name the specific facts it gave (items, prices, numbers).",
+                "If $name looked something up for this message, name the specific facts found (items, prices, numbers).",
         )
         val count = options.effectivePlayerOptionCount
         if (count > 0) {
@@ -232,7 +232,7 @@ internal object NPCPrompting {
             )
         }
         if (options.canEndConversation) {
-            properties["ends_conversation"] = JsonSchema.boolean(description = "true only if $name ends the conversation now.")
+            properties["ends_conversation"] = JsonSchema.boolean(description = "true only if $name says goodbye or refuses to talk any more; otherwise false.")
         }
         return JsonSchema.obj(properties)
     }
