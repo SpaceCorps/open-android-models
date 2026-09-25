@@ -6,7 +6,13 @@ import com.spacecorps.oam.AgentRun
 import com.spacecorps.oam.ToolCall
 import com.spacecorps.oam.ToolOutput
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -90,6 +96,31 @@ internal class ToolForwarder(
     }
 }
 
+/**
+ * Runs [collect] (which follows a turn to its end) so that cancelling the
+ * calling request only *requests* the turn's cancellation, through [cancel],
+ * and returns the turn's real outcome once it has ended: `cancelled` after it
+ * has rolled back, or its result if it committed before the cancellation
+ * reached it (it is in the history then, so it is reported as done).
+ */
+internal suspend fun <T> turnOutcome(cancel: () -> Unit, collect: suspend () -> T): Result<T> {
+    // Detached from the request's job, but in its context (the WorkQueue slot, for markCommitted).
+    val collecting = CoroutineScope(currentCoroutineContext().minusKey(Job)).async {
+        try {
+            Result.success(collect())
+        } catch (error: Throwable) {
+            Result.failure(BridgeError.normalizing(error))
+        }
+    }
+    return try {
+        collecting.await()
+    } catch (_: CancellationException) {
+        cancel()
+        val outcome = withContext(NonCancellable) { collecting.await() }
+        if (outcome.isSuccess) outcome else Result.failure(BridgeError.cancelled("The turn was cancelled."))
+    }
+}
+
 /** Bridges one [AgentRun] to the peer. */
 internal class TurnDriver(
     private val engine: BridgeEngine,
@@ -101,7 +132,7 @@ internal class TurnDriver(
     private val tools = ToolForwarder(engine, requestId, context)
 
     suspend fun drive(run: AgentRun): AgentResponse {
-        val outcome: Result<AgentResponse> = try {
+        val outcome = turnOutcome(run::cancel) {
             var response: AgentResponse? = null
             run.events.collect { event ->
                 if (stream) BridgeCoding.json(event)?.let { engine.notify(eventMethod, tools.params("event" to it)) }
@@ -117,12 +148,7 @@ internal class TurnDriver(
                     else -> Unit
                 }
             }
-            response?.let { Result.success(it) } ?: Result.failure(BridgeError.internalError("The turn ended without a response."))
-        } catch (_: CancellationException) {
-            run.cancel()
-            Result.failure(BridgeError.cancelled("The turn was cancelled."))
-        } catch (error: Throwable) {
-            Result.failure(BridgeError.normalizing(error))
+            response ?: throw BridgeError.internalError("The turn ended without a response.")
         }
         tools.finish()
         return outcome.getOrThrow()

@@ -352,6 +352,28 @@ class SessionTest {
         assertTrue(harness.box.index { it["method"].str == "tool/cancel" }!! < harness.responseIndex(request)!!)
     }
 
+    /** A cancelled turn never commits after its `cancelled` response (see NpcTest.cancelledTurnNeverCommitsLater). */
+    @Test
+    fun cancelledTurnNeverCommitsLater() = runBlocking<Unit> {
+        repeat(50) {
+            val harness = BridgeHarness()
+            val id = harness.createSession(
+                steps = """[{"toolCalls": [{"name": "open_gate", "arguments": {"gate": "x"}}]}, {"text": "Opened."}, {"text": "Again."}]""",
+                tools = "[$openGate]",
+            )
+            val first = harness.send("session/respond", """{"session": "$id", "prompt": "Open"}""")
+            val second = harness.send("session/respond", """{"session": "$id", "prompt": "Again"}""")
+            harness.box.wait { it["method"].str == "tool/call" }
+            assertEquals(2, harness.result("session/cancel", """{"session": "$id"}""")["cancelled"].int)
+            assertEquals(-32009, harness.response(first).errorCode)
+            assertEquals(-32009, harness.response(second).errorCode)
+            val transcript = assertNotNull(harness.result("session/transcript", """{"session": "$id"}""")["transcript"])
+            assertEquals(0, BridgeCoding.transcript(transcript).entries.size)
+            assertEquals(0, harness.result("session/list")["sessions"][0]["entries"].int)
+            harness.engine.close()
+        }
+    }
+
     @Test
     fun modelErrorsMapToApplicationCodes() = runBlocking<Unit> {
         val harness = BridgeHarness()

@@ -198,6 +198,31 @@ class NpcTest {
         assertEquals(0, harness.result("npc/list")["npcs"][0]["turnCount"].int)
     }
 
+    /**
+     * Cancelling resolves the pending tool call; the turn must not resume from it and commit
+     * after its `cancelled` response (a race that showed on loaded CI machines).
+     */
+    @Test
+    fun cancelledTurnNeverCommitsLater() = runBlocking<Unit> {
+        repeat(50) {
+            val harness = BridgeHarness(BridgeConfiguration(modelAvailability = { BridgeHarness.TEST_AVAILABILITY }, defaultToolTimeout = null))
+            harness.createNpc(
+                steps = """[{"toolCalls": [{"name": "check_inventory", "arguments": {"item": "shield"}}]}, ${reply("Never mind.")}, ${reply("Helmets.")}]""",
+                tools = "[$inventory]",
+            )
+            val talk = harness.send("npc/talk", """{"npc": "gorm", "line": "Shields?"}""")
+            val queued = harness.send("npc/talk", """{"npc": "gorm", "line": "And helmets?"}""")
+            harness.box.wait(2.seconds, "tool/call") { it["method"].str == "tool/call" }
+            assertEquals(2, harness.result("npc/cancel", """{"npc": "gorm"}""")["cancelled"].int)
+            assertEquals("cancelled", harness.response(talk).errorName)
+            assertEquals("cancelled", harness.response(queued).errorName)
+            assertEquals(0, harness.result("npc/list")["npcs"][0]["turnCount"].int)
+            val state = assertNotNull(harness.result("npc/state", """{"npc": "gorm", "settle": false}""")["state"])
+            assertEquals(0, GameCoding.saveState(state).transcript.entries.size)
+            harness.engine.close()
+        }
+    }
+
     @Test
     fun fallbacksRetriesAndTextFormat() = runBlocking<Unit> {
         val harness = BridgeHarness()

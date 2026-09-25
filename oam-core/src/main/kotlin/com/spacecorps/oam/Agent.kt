@@ -381,12 +381,17 @@ public class Agent(
         try {
             val engine = TurnEngine(model, run, setup, prompt, schema) { entry -> synchronized(lock) { inProgress?.add(entry) } }
             val (response, newEntries) = engine.run()
-            synchronized(lock) {
-                entries += TranscriptEntry.Prompt(prompt)
-                entries += newEntries
-                usage += response.usage
-                inProgress = null
+            // A cancellation that reached the run first wins even if the turn got this far (its job's
+            // cancellation may not have landed yet): the turn must then leave no trace.
+            val committed = run.commit {
+                synchronized(lock) {
+                    entries += TranscriptEntry.Prompt(prompt)
+                    entries += newEntries
+                    usage += response.usage
+                    inProgress = null
+                }
             }
+            if (!committed) throw AgentError(AgentErrorCode.CANCELLED, "The turn was cancelled.")
             run.finish(Result.success(response))
         } catch (error: Throwable) {
             synchronized(lock) { inProgress = null }

@@ -57,6 +57,7 @@ public class AgentRun internal constructor(
     private var started = false
     private var finished = false
     private var cancelled = false
+    private var committed = false
 
     /**
      * The turn's events, ending with [AgentEvent.Completed] on success or
@@ -99,11 +100,14 @@ public class AgentRun internal constructor(
      */
     public fun cancel() {
         val runningJob = synchronized(lock) {
+            if (committed) return
             cancelled = true
             job
         }
-        cancelPending("The turn was cancelled.")
+        // Stop the turn before resolving its pending external calls, so it cannot resume with
+        // their error output and run further steps or tools.
         runningJob?.cancel()
+        cancelPending("The turn was cancelled.")
         // A turn still queued behind another ends now; a running one ends once it has rolled back.
         finishIfNotStarted(AgentError(AgentErrorCode.CANCELLED, "The turn was cancelled."))
     }
@@ -177,6 +181,20 @@ public class AgentRun internal constructor(
     internal fun markStarted(): Boolean = synchronized(lock) {
         if (finished) return false
         started = true
+        true
+    }
+
+    /**
+     * The turn's point of no return: runs [apply] (adding the turn to the
+     * history) unless the turn was cancelled, atomically with [cancel]. A
+     * turn is either cancelled or committed, never both.
+     *
+     * @return False if the turn was cancelled; [apply] did not run.
+     */
+    internal fun commit(apply: () -> Unit): Boolean = synchronized(lock) {
+        if (cancelled) return false
+        apply()
+        committed = true
         true
     }
 

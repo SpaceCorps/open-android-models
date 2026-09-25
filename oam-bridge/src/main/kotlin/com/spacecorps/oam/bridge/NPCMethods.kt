@@ -18,7 +18,6 @@ import com.spacecorps.oam.game.NPCSaveState
 import com.spacecorps.oam.game.Persona
 import com.spacecorps.oam.game.WorldState
 import com.spacecorps.oam.stringValue
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -356,7 +355,7 @@ internal class DialogueDriver(
     private val tools = ToolForwarder(engine, requestId, context)
 
     suspend fun drive(dialogue: DialogueStream): DialogueTurn {
-        val outcome: Result<DialogueTurn> = try {
+        val outcome = turnOutcome(dialogue::cancel) {
             var turn: DialogueTurn? = null
             dialogue.events.collect { event ->
                 if (stream) GameCoding.json(event)?.let { engine.notify("npc/event", tools.params("event" to it)) }
@@ -372,12 +371,7 @@ internal class DialogueDriver(
                     else -> Unit
                 }
             }
-            turn?.let { Result.success(it) } ?: Result.failure(BridgeError.internalError("The dialogue turn ended without a reply."))
-        } catch (_: CancellationException) {
-            dialogue.cancel()
-            Result.failure(BridgeError.cancelled("The turn was cancelled."))
-        } catch (error: Throwable) {
-            Result.failure(BridgeError.normalizing(error))
+            turn ?: throw BridgeError.internalError("The dialogue turn ended without a reply.")
         }
         tools.finish()
         return outcome.getOrThrow()
