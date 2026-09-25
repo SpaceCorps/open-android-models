@@ -45,7 +45,35 @@ public class BridgeEngineFactory(
     public val systemModel: LanguageModel = LazyLanguageModel(systemModel)
 
     override fun create(context: Context, output: MessageSink): MessageEngine =
-        BridgeMessageEngine(BridgeEngine(configure(systemModel)) { line -> output.deliver(line) })
+        BridgeMessageEngine(BridgeEngine(configure(systemModel)) { line -> output.deliver(JniText.escapeSupplementary(line)) })
+}
+
+/**
+ * Text handling at the JNI boundary. JNI's `GetStringUTFChars` and
+ * `NewStringUTF` use *modified* UTF-8, which encodes characters outside the
+ * Basic Multilingual Plane (emoji, for example) as two 3-byte surrogates, not
+ * one 4-byte sequence, so strict UTF-8 decoders (Rust's `str::from_utf8`,
+ * `std::string` consumers expecting UTF-8) reject or garble them.
+ */
+public object JniText {
+    /**
+     * Rewrites every supplementary character of a JSON line as a `\uXXXX\uXXXX`
+     * surrogate-pair escape. The JSON value is unchanged, and the line then reads
+     * the same as standard UTF-8 and as modified UTF-8. JSON only allows such
+     * characters inside strings, where the escape is valid.
+     */
+    public fun escapeSupplementary(line: String): String {
+        if (line.none(Char::isSurrogate)) return line
+        val result = StringBuilder(line.length + 16)
+        for (char in line) {
+            if (char.isSurrogate()) {
+                result.append("\\u").append(char.code.toString(16).uppercase().padStart(4, '0'))
+            } else {
+                result.append(char)
+            }
+        }
+        return result.toString()
+    }
 }
 
 /** Adapts a [BridgeEngine] to the line-oriented [MessageEngine] that [BridgeHost] runs. */

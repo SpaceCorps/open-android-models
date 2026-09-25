@@ -169,6 +169,17 @@ class OamJniTest {
         assertEquals(count, delivered.size)
     }
 
+    @Test
+    fun supplementaryCharactersAreEscapedForJni() {
+        val line = """{"jsonrpc":"2.0","method":"npc/event","params":{"event":{"type":"lineDelta","delta":"Café 🗡️🐉"}}}"""
+        val escaped = JniText.escapeSupplementary(line)
+        assertTrue(escaped.none(Char::isSurrogate))
+        assertTrue("\\uD83D\\uDDE1" in escaped)
+        assertTrue("Café" in escaped)
+        assertEquals(Json.parseToJsonElement(line), Json.parseToJsonElement(escaped))
+        assertEquals("plain ASCII and é", JniText.escapeSupplementary("plain ASCII and é"))
+    }
+
     private fun awaitMessage(predicate: (JsonObject) -> Boolean): JsonObject {
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {

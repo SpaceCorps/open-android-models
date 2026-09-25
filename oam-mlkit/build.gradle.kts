@@ -57,6 +57,11 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    // Opt-in real-JNI check (JniProbeTest): a native host library built from src/test/native/probe_host.c.
+    val probe = listOf("OAM_JNI_PROBE_LIB", "OAM_JNI_PROBE_OUT")
+    probe.forEach { name -> System.getenv(name)?.let { environment(name, it) } }
+    inputs.property("jniProbe", probe.joinToString(",") { System.getenv(it) ?: "" })
+    if (!System.getenv("OAM_JNI_PROBE_LIB").isNullOrEmpty()) outputs.upToDateWhen { false }
     testLogging {
         events("failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
