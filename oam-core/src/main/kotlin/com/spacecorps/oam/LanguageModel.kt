@@ -136,6 +136,8 @@ public sealed interface ModelAvailability {
  * @property maxOutputTokens Output token limit; `null` for the backend default.
  * @property kind What the agent is asking for (for logs, tests and backend tuning).
  * @property tools Tool definitions, only for backends with [ModelCapabilities.nativeToolCalling].
+ * @property turn The agent's current turn (the user's prompt and tool uses so far). Informational, for
+ *   scripted models and logs; real backends must rely on the rendered prompt only.
  */
 @Serializable
 public data class GenerationRequest(
@@ -148,10 +150,23 @@ public data class GenerationRequest(
     public val maxOutputTokens: Int? = null,
     public val kind: GenerationKind = GenerationKind.TEXT,
     public val tools: List<ToolDefinition> = emptyList(),
+    public val turn: TurnSnapshot? = null,
 ) {
     /** [promptPrefix] followed by [prompt]. */
     public val fullPrompt: String get() = (promptPrefix ?: "") + prompt
 }
+
+/**
+ * The state of the agent's current turn when a model step runs.
+ *
+ * @property prompt What the user said this turn.
+ * @property toolUses Tool calls made so far this turn, with their outputs.
+ */
+@Serializable
+public data class TurnSnapshot(
+    public val prompt: String,
+    public val toolUses: List<TranscriptEntry.ToolUse> = emptyList(),
+)
 
 /** Why the agent calls the model. */
 @Serializable

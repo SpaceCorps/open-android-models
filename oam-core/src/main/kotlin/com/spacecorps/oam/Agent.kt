@@ -31,6 +31,9 @@ import kotlin.time.Duration.Companion.seconds
  *   structured output is invalid.
  * @property userLabel Label of the user's lines in the rendered conversation (for an NPC: `"Player"`).
  * @property assistantLabel Label of the agent's lines (for an NPC: its name).
+ * @property dedupesToolCalls Read a call identical to a successful one earlier in the turn (same tool and
+ *   arguments) as a decision to reply: small models otherwise repeat a lookup whose result they already
+ *   have. Turn it off for tools that are meant to be called repeatedly with the same arguments.
  * @property structuredReplyRenderer How an earlier structured reply appears in the rendered conversation
  *   (for an NPC: its spoken line). Default: `key: value` pairs. Never JSON, which small models copy.
  */
@@ -49,6 +52,7 @@ public data class AgentConfiguration(
     public val repairsInvalidOutput: Boolean = true,
     public val userLabel: String = "User",
     public val assistantLabel: String = "Assistant",
+    public val dedupesToolCalls: Boolean = true,
     public val structuredReplyRenderer: ((JsonElement) -> String)? = null,
 ) {
     init {

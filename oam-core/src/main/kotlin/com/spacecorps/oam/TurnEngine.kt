@@ -283,7 +283,7 @@ internal class TurnEngine(
         class Invalid(val problem: String, val arguments: JsonObject) : Checked
     }
 
-    private fun alreadyCalled(tool: AgentTool, arguments: JsonObject): Boolean =
+    private fun alreadyCalled(tool: AgentTool, arguments: JsonObject): Boolean = config.dedupesToolCalls &&
         uses.any { it.call.name == tool.name && it.call.arguments == arguments && !it.output.isError }
 
     private fun checkArguments(tool: AgentTool, candidates: List<JsonObject>): Checked {
@@ -397,6 +397,7 @@ internal class TurnEngine(
             seed = config.seed,
             maxOutputTokens = maxOutputTokens,
             kind = generationKind,
+            turn = TurnSnapshot(prompt, uses.toList()),
         )
         return withRetry {
             onAttempt()
