@@ -607,6 +607,37 @@ class SessionTest {
     }
 
     @Test
+    fun undeclaredKeysAreDroppedAsOnApple() = runBlocking<Unit> {
+        val harness = BridgeHarness()
+        val seen = Collections.synchronizedList(ArrayList<kotlinx.serialization.json.JsonElement?>())
+        harness.box.responder = MessageBox.ToolResponder { call, _ ->
+            seen += call["arguments"]
+            j("""{"output": "opened"}""")
+        }
+        val id = harness.createSession(
+            steps = """[
+                {"toolCalls": [{"name": "open_gate", "arguments": {"gate": "north", "force": true}}]}, {"text": "Done."},
+                {"json": {"choice": "sell", "reasoning": "Fair price.", "mood": "calm"}}
+            ]""",
+            tools = "[$openGate]",
+        )
+        val reply = harness.result("session/respond", """{"session": "$id", "prompt": "Open the north gate."}""")
+        // The model invented "force"; the game only sees what the tool declares.
+        assertEquals(listOf(j("""{"gate": "north"}""")), seen.toList())
+        assertEquals(j("""{"gate": "north"}"""), reply["toolCalls"][0]["call"]["arguments"])
+
+        val schema = """{"type": "object", "properties": {"reasoning": {"type": "string"}, "choice": {"type": "string", "enum": ["sell", "keep"]}}, "required": ["reasoning", "choice"]}"""
+        val structured = harness.result("session/respond", """{"session": "$id", "prompt": "Decide", "schema": $schema, "toolChoice": "none"}""")
+        assertEquals(j("""{"reasoning": "Fair price.", "choice": "sell"}"""), structured["structured"])
+
+        // An explicit additionalProperties is kept.
+        val open = harness.result("schema/validate", """{"schema": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": true}}""")
+        assertEquals(JsonPrimitive(true), open["generationSchema"]["additionalProperties"])
+        val closed = harness.result("schema/validate", """{"schema": {"type": "object", "properties": {"a": {"type": "object", "properties": {"b": {"type": "string"}}}}}}""")
+        assertEquals(JsonPrimitive(false), closed["generationSchema"]["properties"]["a"]["additionalProperties"])
+    }
+
+    @Test
     fun concurrentTurnsOnOneSessionAreSerialized() = runBlocking<Unit> {
         val harness = BridgeHarness()
         val id = harness.createSession(steps = (1..5).joinToString(", ", "[", "]") { """{"template": "$it:{prompt}", "delayMs": ${(5 - it) * 10}}""" })

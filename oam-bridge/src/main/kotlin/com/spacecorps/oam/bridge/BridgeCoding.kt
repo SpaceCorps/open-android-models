@@ -256,7 +256,8 @@ public object BridgeCoding {
     }
 
     /**
-     * A JSON Schema object (or `true`). Schemas sent as JSON text are tolerated.
+     * A JSON Schema object (or `true`), [closed] the way open-apple-models'
+     * generation schemas are. Schemas sent as JSON text are tolerated.
      *
      * @throws BridgeError `invalid_params`.
      */
@@ -268,9 +269,38 @@ public object BridgeCoding {
                 throw BridgeError.invalidParams("'$path' must be a JSON Schema object.")
             }
         } ?: value
-        if (parsed is JsonObject) return JsonSchema(parsed)
+        if (parsed is JsonObject) return JsonSchema(closed(parsed) as JsonObject)
         if (parsed.boolValue == true) return JsonSchema.any
         throw BridgeError.invalidParams("'$path' must be a JSON Schema object.")
+    }
+
+    /**
+     * Gives every object schema that declares `properties` but not
+     * `additionalProperties` an `"additionalProperties": false`, recursively.
+     *
+     * On Apple the model is constrained to the schema, so tool arguments and
+     * structured output never carry keys the schema does not declare. Gemini
+     * Nano writes JSON freely and sometimes adds keys (a `price` argument to an
+     * inventory lookup); closing the schema makes oam-core drop them before a
+     * `tool/call` reaches the game. Members of `allOf` stay open, since closing
+     * them would make them reject each other's properties.
+     */
+    public fun closed(schema: JsonElement): JsonElement = closed(schema, insideAllOf = false)
+
+    private fun closed(schema: JsonElement, insideAllOf: Boolean): JsonElement {
+        val obj = schema as? JsonObject ?: return schema
+        val members = LinkedHashMap<String, JsonElement>()
+        for ((key, value) in obj) {
+            members[key] = when (key) {
+                "properties", "\$defs", "definitions" -> (value as? JsonObject)?.let { map -> JsonObject(map.mapValues { closed(it.value) }) } ?: value
+                "items", "additionalProperties", "not" -> closed(value)
+                "anyOf", "oneOf" -> (value as? JsonArray)?.let { list -> JsonArray(list.map(::closed)) } ?: value
+                "allOf" -> (value as? JsonArray)?.let { list -> JsonArray(list.map { closed(it, insideAllOf = true) }) } ?: value
+                else -> value
+            }
+        }
+        if (!insideAllOf && obj["properties"] is JsonObject && "additionalProperties" !in obj) members["additionalProperties"] = JsonPrimitive(false)
+        return JsonObject(members)
     }
 
     /**
