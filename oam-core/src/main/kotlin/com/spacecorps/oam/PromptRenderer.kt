@@ -31,11 +31,11 @@ internal data class RenderedPrompt(
  *
  * Gemini Nano has no roles and no chat session, so the conversation is
  * written as labelled lines (`Player: …`, `Mira: …`, `[check_menu → {…}]`)
- * followed by a short task section for the step. The system instruction
- * (instructions plus context note) is byte-stable across the turn's steps
- * and across turns so backends can cache it; the decide step's tool list is
- * passed as a stable prompt prefix for the same reason. History is trimmed
- * oldest turn first to fit the model's input limit.
+ * followed by a short task section for the step (a decide step's lists the
+ * offered tools). The system instruction (instructions plus context note) is
+ * byte-stable across the turn's steps and across turns so backends can cache
+ * it; a model without system instructions gets it as the prompt prefix
+ * instead. History is trimmed oldest turn first to fit the model's input limit.
  */
 internal class PromptRenderer(
     private val instructions: String?,
